@@ -1,0 +1,9 @@
+.idea/
+*.json
+*.gz
+*.csv
+*.tsv
+*.db
+*.pptx
+*.html
+__pycache__/
