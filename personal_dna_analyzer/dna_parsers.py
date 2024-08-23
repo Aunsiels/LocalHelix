@@ -2,13 +2,17 @@ import pandas as pd
 from tqdm import tqdm
 
 
+BASES = {"A": "T", "T": "A", "G": "C", "C": "G", "-": "-"}
+
+
 def read_my_heritage(path):
     df = pd.read_csv(path, comment='#')
     res = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading MyHeritage data"):
+        genotype = list(sorted(row.RESULT))
         res[row.RSID] = {"chromosome": row.CHROMOSOME,
                          "position": row.POSITION,
-                         "genotype": list(sorted(row.RESULT))}
+                         "genotype": genotype}
     return res
 
 
@@ -16,9 +20,10 @@ def read_23andme(path):
     df = pd.read_csv(path, comment='#', header=0, names=["rsid", "chromosome", "position", "genotype"], sep="\t")
     res = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading 23andme data"):
+        genotype = list(sorted(row.genotype))
         res[row.rsid] = {"chromosome": row.chromosome,
                          "position": row.position,
-                         "genotype": list(sorted(row.genotype))}
+                         "genotype": genotype}
     return res
 
 
@@ -26,9 +31,10 @@ def read_ancestry(path):
     df = pd.read_csv(path, comment='#', sep="\t")
     res = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading Ancestry data"):
+        genotype = list(sorted([row.allele1, row.allele2]))
         res[row.rsid] = {"chromosome": row.chromosome,
                          "position": row.position,
-                         "genotype": list(sorted([row.allele1, row.allele2]))}
+                         "genotype": genotype}
     return res
 
 

@@ -20,7 +20,7 @@ CLINVAR_XML = "ClinVarVCVRelease_00-latest.xml.gz"
 
 
 def get_clinvar_rs_pathologies(pathology_mapping):
-    df = pd.read_csv("clinvar_pathologies.tsv", sep="\t")
+    df = pd.read_csv(CLINVAR_PATHOLOGIES_TSV, sep="\t")
     pathologies = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading ClinVar pathologies"):
         if pd.isna(row.rs_id):
@@ -67,29 +67,32 @@ def get_variants_mapping():
 
 
 def get_clinvar_variant_pathologies():
-    df = pd.read_csv("clinvar_pathologies.tsv", sep="\t")
+    df = pd.read_csv(CLINVAR_PATHOLOGIES_TSV, sep="\t")
     res = dict()
     for row in df.itertuples():
         id = row.variation_id
         if id not in res:
             res[id] = set()
         if not pd.isna(row.name):
-            res[id].add(Pathology(row.condition_id, row.name, row.is_pathologic, row.n_submissions, row.status))
+            res[id].add(Pathology(row.condition_id, row.name, row.is_pathogenic, row.n_submissions, row.status))
     return res
 
 
 def get_clinvar_variants(pathology_mapping):
-    df = pd.read_csv("clinvar_variants.tsv", sep="\t")
+    df = pd.read_csv(CLINVAR_VARIANTS_TSV, sep="\t")
+    df = df[df['variation_type'].isin(["single nucleotide variant", "Haplotype"])]
+    # All possible types: Complex, CompoundHeterozygote, copy number gain, copy number loss, Deletion, Diplotype,
+    # Distinct chromosomes, Duplication, fusion, Haplotype, 'Haplotype, single variant', Indel, Insertion,
+    # Inversion, Microsatellite, Phase unknown, protein only, single nucleotide variant, Tandem duplication,
+    # Translocation, Variation
     variants = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading ClinVar variant data"):
         if pd.isna(row.rs_id):
             continue
         id = "rs" + str(int(row.rs_id))
-        name = row.variation_name
-        if ">" not in name:
+        if not row.allele or pd.isna(row.allele):
             continue
-        idx = name.find(">")
-        abnormal = name[idx + 1]
+        abnormal = row.allele.strip()
         if id not in variants:
             variants[id] = []
         variants[id].append((row.variation_id, abnormal,
@@ -151,10 +154,13 @@ def get_clinvar_variant_from_rs(rs_full, mapping):
     rs = rs_full.split("(")[0].lower()
     alleles = rs_full.split("(")[1][:-1].split(";")
     variants = mapping.get(rs, [])
+    res_var = []
+    res_pathos = []
     for variant, abnormal, pathos in variants:
-        if abnormal in alleles:
-            return variant, pathos
-    return None, []
+        if abnormal and abnormal in alleles:
+            res_var.append(variant)
+            res_pathos.append(pathos)
+    return res_var, res_pathos
 
 
 def get_tree_xml():
@@ -203,13 +209,11 @@ def get_variation(variation):
     previous = []
     for event, row in iterparse(xml_file, events=("start", "end",)):
         if event == "start":
-            if row.tag == "VariationArchive":
-                print(row.attrib["VariationID"], type(row.attrib["VariationID"]), end="\r")
             if row.tag == "VariationArchive" and row.attrib["VariationID"] == variation:
                 save = True
                 current = rows
         else:
-            if row.tag == "VariationAr	chive" and save:
+            if row.tag == "VariationArchive" and save:
                 break
         if save and event == "start":
             if row.tag not in current:
@@ -223,6 +227,8 @@ def get_variation(variation):
             current = previous.pop()
         row.clear()
     xml_file.close()
+    with open("example2.json", "w") as f:
+        json.dump(rows, f)
 
 
 def process_clinvar_release():
@@ -231,14 +237,14 @@ def process_clinvar_release():
     current = rows
     previous = []
     variation_file = open(CLINVAR_VARIANTS_TSV, "w")
-    variation_file.write("\t".join(("variation_id", "variation_name", "variation_type", "rs_id")) + "\n")
+    variation_file.write("\t".join(("variation_id", "variation_name", "variation_type", "rs_id", "allele")) + "\n")
     pathology_file = open(CLINVAR_PATHOLOGIES_TSV, "w")
     pathology_file.write("\t".join(("variation_id", "rs_id", "name", "condition_id",
                                     "status", "is_pathogenic", "n_submissions")) + "\n")
     haplotype_file = open(HAPLOTYPES_TSV, "w")
     haplotype_file.write("variation_id" + "\t" + "variants" + "\n")
     counter = 0
-    for event, row in iterparse(xml_file, events=("start", "end",)):
+    for event, row in tqdm(iterparse(xml_file, events=("start", "end",)), total=1077308286):
         counter += 1
         if event == "start" and row.tag == "VariationArchive":
             rows = dict()
@@ -273,13 +279,22 @@ def process_variation(var_dict, variant_file, pathology_file, haplotype_file):
     variation_name = base["attrs"]["VariationName"]
     variation_type = base["attrs"]["VariationType"]
     rs_id = ""
+    modification_allele = ""
     if "SimpleAllele" in classified_record:
         simple_allele = classified_record["SimpleAllele"][0]
         if "XRefList" in simple_allele:
             for xref in simple_allele["XRefList"][0]["XRef"]:
                 if xref["attrs"]["DB"] == "dbSNP":
                     rs_id = xref["attrs"]["ID"]
-    variant_file.write("\t".join((variation_id, variation_name, variation_type, rs_id)) + "\n")
+        if "Location" in simple_allele:
+            location = simple_allele["Location"][0]
+            if "SequenceLocation" in location:
+                attrs_location = location["SequenceLocation"][0]["attrs"]
+                if "alternateAlleleVCF" in attrs_location:
+                    modification_allele = attrs_location["alternateAlleleVCF"]
+                elif "Strand" in attrs_location:
+                    modification_allele = attrs_location["Strand"]
+    variant_file.write("\t".join((variation_id, variation_name, variation_type, rs_id, modification_allele)) + "\n")
     if "Haplotype" in classified_record:
         haplotype = classified_record["Haplotype"][0]
         h_variants = []
@@ -364,3 +379,6 @@ def initialize_clinvar(force=False):
 
 Pathology = namedtuple("Pathology", ["condition_id", "name", "is_pathogenic",
                                      "n_submissions", "status"])
+
+if __name__ == '__main__':
+    process_clinvar_release()

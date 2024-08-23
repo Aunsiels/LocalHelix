@@ -23,13 +23,17 @@ def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_trait
                            total=len(genotype_infos), desc="Generating report"):
         base_rs = key.split("(")[0].lower()
         al1, al2 = key.split("(")[1].replace(")", "").split(";")
-        variant, pathos = get_clinvar_variant_from_rs(key, variants_mapping)
-        all_clinvar_variants.append(variant)
+        variant_list, pathos_list = get_clinvar_variant_from_rs(key, variants_mapping)
+        for variant in variant_list:
+            all_clinvar_variants.append(variant)
         all_pathologies = list(sorted(pathologies.get(base_rs, []), key=lambda x: x.name.lower()))
-        variant_pathologies = list(sorted(pathos, key=lambda x: x.name.lower()))
-        variant_pathology_names = {x.name for x in variant_pathologies}
+        variant_pathologies_list = []
+        variant_pathology_names = set()
+        for pathos in pathos_list:
+            variant_pathologies_list.append(list(sorted(pathos, key=lambda x: x.name.lower())))
+            variant_pathology_names.update({x.name for x in variant_pathologies_list[-1]})
         all_pathologies = [x for x in all_pathologies if x.name not in variant_pathology_names]
-        if not value and not all_pathologies and not variant_pathologies and \
+        if not value and not all_pathologies and all(len(x) == 0 for x in variant_pathologies_list) and \
                 (base_rs, al1) not in gwas_traits and (base_rs, al2) not in gwas_traits:
             continue
         temp = dict()
@@ -40,8 +44,8 @@ def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_trait
         temp["text"] = value.get("text", "")
         temp["was_on_snpedia"] = len(value) != 0
         temp["ClinVarAllPathologies"] = all_pathologies
-        temp["ClinVarVariant"] = variant
-        temp["ClinVarVariantPathologies"] = variant_pathologies
+        temp["ClinVarVariants"] = variant_list
+        temp["ClinVarVariantPathologies"] = variant_pathologies_list
         temp["GWAS"] = dict()
         if (base_rs, al1) in gwas_traits:
             temp["GWAS"][al1] = gwas_traits[(base_rs, al1)]
@@ -56,12 +60,12 @@ def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_trait
         temp["Magnitude"] = "Unknown"
         temp["Repute"] = "Unknown"
         temp["summary"] = ""
-        temp["rs"] = "Haplotype: " + h_to_v[found_haplotype]
+        temp["rs"] = "Haplotype: " + str(found_haplotype) + " = " + " + ".join(str(x) for x in h_to_v[found_haplotype])
         temp["text"] = ""
         temp["was_on_snpedia"] = False
         temp["ClinVarAllPathologies"] = []
-        temp["ClinVarVariant"] = found_haplotype
-        temp["ClinVarVariantPathologies"] = variant_pathologies
+        temp["ClinVarVariants"] = [found_haplotype]
+        temp["ClinVarVariantPathologies"] = [variant_pathologies]
         temp["GWAS"] = dict()
         res.append(temp)
     res = sorted(res, key=lambda x: -score_summary_entry(x))
@@ -81,8 +85,9 @@ def summaries_results_in_html(all_rs):
     for rs in all_rs:
         if rs["was_on_snpedia"]:
             snpedia_counter += 1
-        for pathology in rs["ClinVarVariantPathologies"]:
-            _add_pathology_to_counters(pathologies_variants, pathologies_variants_pathogenic, pathology)
+        for pathology_list in rs["ClinVarVariantPathologies"]:
+            for pathology in pathology_list:
+                _add_pathology_to_counters(pathologies_variants, pathologies_variants_pathogenic, pathology)
         for pathology in rs["ClinVarAllPathologies"]:
             _add_pathology_to_counters(pathologies_all, pathologies_all_pathogenic, pathology)
         gwas = rs["GWAS"]
@@ -145,8 +150,8 @@ def get_card_header(rs):
 
 def rs_to_html(rs):
     clinvar_all_pathologies = print_pathologies_html(rs["ClinVarAllPathologies"])
-    clinvar_variant_pathologies = print_pathologies_html(rs["ClinVarVariantPathologies"])
-    var_link = get_clinvar_var_link(rs["ClinVarVariant"])
+    clinvar_variant_pathologies = [print_pathologies_html(x) for x in rs["ClinVarVariantPathologies"]]
+    var_links = [get_clinvar_var_link(x) for x in rs["ClinVarVariants"]]
     content = get_card_header(rs)
     content += """
       <h5 class="card-header">""" + rs["rs"] + """</h5>
@@ -158,19 +163,17 @@ def rs_to_html(rs):
                rs["Repute"] + \
                "<br>" + \
                "<b>SNPedia Variant</b>: " + get_snpedia_link(rs["rs"]) + "<br>" + \
-               "<b>SNPedia Base SNP</b>: " + get_snpedia_link(rs["rs"].split("(")[0]) + "<br>" + \
-               ("<span title=\"ClinVar page of your variant\"><b>ClinVar "
-                "Variant</b></span>: ") + \
-               var_link + "<br>" + \
-               ("<span title=\"Associated traits/pathologies with your variants on ClinVar\"><b>Your variants "
-                "pathologies (ClinVar)</b></span>: ") + \
-               clinvar_variant_pathologies + "<br>" + \
-               ("<span title=\"Other pathologies associated with this SNP. "
+               "<b>SNPedia Base SNP</b>: " + get_snpedia_link(rs["rs"].split("(")[0]) + "<br>"
+    for var_link, clinvar_var_pathos in zip(var_links, clinvar_variant_pathologies):
+        content += ("<span title=\"ClinVar page of your variant\"><b>ClinVar "
+                    "Variant</b></span>: ") + \
+                   var_link + "<br>" + \
+                   ("<span title=\"Associated traits/pathologies with your variants on ClinVar\"><b>Variants "
+                    "pathologies for " + var_link + " (ClinVar)</b></span>: ") + \
+                   clinvar_var_pathos + "<br>"
+    content += ("<span title=\"Other pathologies associated with this SNP. "
                 "Interesting to know if you have a good variant\"><b>Pathologies/traits you avoided (ClinVar)"
-                "</b></span>: ") + \
-               clinvar_all_pathologies + "<br>" + \
-               get_gwas_html(rs) + "<br>" \
-               """</p>
+                "</b></span>: ") + clinvar_all_pathologies + "<br>" + get_gwas_html(rs) + "<br>" + """</p>
       </div>
     </div>
     """
@@ -219,8 +222,8 @@ def score_summary_entry(entry):
     for value in entry["GWAS"]:
         n_gwas += len(value)
     n_pathologies = len(entry["ClinVarAllPathologies"])
-    n_variant_pathologies = len(entry["ClinVarVariantPathologies"])
-    n_pathogenic = len([x for x in entry["ClinVarVariantPathologies"] if not pd.isna(x.is_pathogenic) and
+    n_variant_pathologies = sum(len(x) for x in entry["ClinVarVariantPathologies"])
+    n_pathogenic = len([x for y in entry["ClinVarVariantPathologies"] for x in y if not pd.isna(x.is_pathogenic) and
                         "pathogenic" in x.is_pathogenic.lower()])
     return float(magnitude) / 5.0 + n_gwas / 20.0 + min(n_pathologies, 30) / 60.0 + \
         n_pathogenic / 5.0 + min((n_variant_pathologies - n_pathogenic), 10) / 20.0

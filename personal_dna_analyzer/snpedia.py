@@ -181,7 +181,7 @@ def get_all_snpedia_match_genotypes(dna, genotypes):
 def get_snpedia_link(text):
     if text and text.lower().startswith("rs"):
         return "<a  class=\"link-dark\" href=\"https://www.snpedia.com/index.php/" + text + \
-                   "\">" + text + "</a>"
+            "\">" + text + "</a>"
     return "None"
 
 
