@@ -1,8 +1,13 @@
+import os.path
 import re
 
 import pandas as pd
 from tqdm import tqdm
 import urllib.request
+
+from personal_dna_analyzer.utils import my_hook
+
+GWAS_ASSOCIATIONS_FILENAME = "gwas_associations.tsv"
 
 
 def get_gwas_html(rs):
@@ -28,7 +33,7 @@ def get_gwas_html(rs):
         res += "<br>"
     res += "</ul><br><b>GWAS page</b>: <a class=\"link-dark\" href=\"https://www.ebi.ac.uk/gwas/variants/" + \
            rs["rs"].split("(")[0] + \
-        "\">" + rs["rs"].split("(")[0] + "</a>"
+           "\">" + rs["rs"].split("(")[0] + "</a>"
     return res
 
 
@@ -62,5 +67,9 @@ def get_gwas_traits():
     return res
 
 
-def initialize_gwas():
-    urllib.request.urlretrieve("https://www.ebi.ac.uk/gwas/api/search/downloads/alternative", "gwas_associations.tsv")
+def initialize_gwas(force=False):
+    if not os.path.exists(GWAS_ASSOCIATIONS_FILENAME) or force:
+        with tqdm(unit='B', unit_scale=True, leave=True, miniters=1,
+                  desc="Downloading GWAS") as t:
+            urllib.request.urlretrieve("https://www.ebi.ac.uk/gwas/api/search/downloads/alternative",
+                                       GWAS_ASSOCIATIONS_FILENAME, my_hook(t))

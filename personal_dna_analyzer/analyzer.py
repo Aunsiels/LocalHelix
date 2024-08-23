@@ -27,7 +27,8 @@ def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_trait
         all_clinvar_variants.append(variant)
         all_pathologies = list(sorted(pathologies.get(base_rs, []), key=lambda x: x.name.lower()))
         variant_pathologies = list(sorted(pathos, key=lambda x: x.name.lower()))
-        all_pathologies = [x for x in all_pathologies if x not in variant_pathologies]
+        variant_pathology_names = {x.name for x in variant_pathologies}
+        all_pathologies = [x for x in all_pathologies if x.name not in variant_pathology_names]
         if not value and not all_pathologies and not variant_pathologies and \
                 (base_rs, al1) not in gwas_traits and (base_rs, al2) not in gwas_traits:
             continue
@@ -225,13 +226,14 @@ def score_summary_entry(entry):
         n_pathogenic / 5.0 + min((n_variant_pathologies - n_pathogenic), 10) / 20.0
 
 
-def initialize_all():
-    initialize_gwas()
-    initialize_snpedia()
-    initialize_clinvar()
+def initialize_all(force=False):
+    initialize_gwas(force)
+    initialize_snpedia(force)
+    initialize_clinvar(force)
 
 
-def main(input_filename, output_filename):
+def main(input_filename, output_filename, force_reload=False):
+    initialize_all(force=force_reload)
     dna = auto_load_dna(input_filename)
     genotypes = load_genotypes()
     gwas_traits = get_gwas_traits()
@@ -257,5 +259,7 @@ if __name__ == '__main__':
                         help="Input file. Accepted formats: MyHeritage, 23andMe, AncestryDNA.")
     parser.add_argument("-o", "--output", required=True,
                         help="Output html file.")
+    parser.add_argument("-f", "--force_reload", action="store_true",
+                        help="Force reload all data sources (time consuming)")
     args = parser.parse_args()
-    main(args.input, args.output)
+    main(args.input, args.output, args.force_reload)

@@ -1,11 +1,22 @@
 import gzip
 import json
+import os
 from collections import namedtuple
 from xml.etree.ElementTree import iterparse
 import urllib.request
 
 import pandas as pd
 from tqdm import tqdm
+
+from personal_dna_analyzer.utils import my_hook
+
+HAPLOTYPES_TSV = "clinvar_haplotypes.tsv"
+
+CLINVAR_PATHOLOGIES_TSV = "clinvar_pathologies.tsv"
+
+CLINVAR_VARIANTS_TSV = "clinvar_variants.tsv"
+
+CLINVAR_XML = "ClinVarVCVRelease_00-latest.xml.gz"
 
 
 def get_clinvar_rs_pathologies(pathology_mapping):
@@ -219,12 +230,12 @@ def process_clinvar_release():
     rows = dict()
     current = rows
     previous = []
-    variation_file = open("clinvar_variants.tsv", "w")
+    variation_file = open(CLINVAR_VARIANTS_TSV, "w")
     variation_file.write("\t".join(("variation_id", "variation_name", "variation_type", "rs_id")) + "\n")
-    pathology_file = open("clinvar_pathologies.tsv", "w")
+    pathology_file = open(CLINVAR_PATHOLOGIES_TSV, "w")
     pathology_file.write("\t".join(("variation_id", "rs_id", "name", "condition_id",
                                     "status", "is_pathogenic", "n_submissions")) + "\n")
-    haplotype_file = open("clinvar_haplotypes.tsv", "w")
+    haplotype_file = open(HAPLOTYPES_TSV, "w")
     haplotype_file.write("variation_id" + "\t" + "variants" + "\n")
     counter = 0
     for event, row in iterparse(xml_file, events=("start", "end",)):
@@ -341,10 +352,14 @@ def print_pathologies_html(pathos):
     return "".join(res)
 
 
-def initialize_clinvar():
+def initialize_clinvar(force=False):
     url = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/xml/ClinVarVCVRelease_00-latest.xml.gz"
-    urllib.request.urlretrieve(url, "ClinVarVCVRelease_00-latest.xml.gz")
-    process_clinvar_release()
+    if not os.path.exists(CLINVAR_XML) or force:
+        with tqdm(unit='B', unit_scale=True, leave=True, miniters=1,
+                  desc="Downloading ClinVar") as t:
+            urllib.request.urlretrieve(url, CLINVAR_XML, my_hook(t))
+    if not os.path.exists(CLINVAR_VARIANTS_TSV) or force:
+        process_clinvar_release()
 
 
 Pathology = namedtuple("Pathology", ["condition_id", "name", "is_pathogenic",

@@ -1,4 +1,5 @@
 import json
+import os.path
 
 import requests
 from bs4 import BeautifulSoup
@@ -24,6 +25,7 @@ def get_all_category(category_name):
     response = requests.get(URL_ENDPOINT, params=params)
     data = response.json()
     members = [x["title"] for x in data['query']['categorymembers']]
+    pbar = tqdm(desc="Downloading from SNPedia " + category_name)
     while "continue" in data:
         next_page = data["continue"]["cmcontinue"]
         params = {
@@ -37,6 +39,8 @@ def get_all_category(category_name):
         response = requests.get(URL_ENDPOINT, params=params)
         data = response.json()
         members += [x["title"] for x in data['query']['categorymembers']]
+        pbar.update(1)
+    pbar.close()
     return members
 
 
@@ -52,24 +56,27 @@ def get_medical_conditions_names():
     return get_all_category("Is_a_medical_condition")
 
 
-def save_snps():
-    json.dump(get_snp_names(), open(FILE_SNPS, 'w'))
+def save_snps(force=False):
+    if not os.path.exists(FILE_SNPS) or force:
+        json.dump(get_snp_names(), open(FILE_SNPS, 'w'))
 
 
 def load_snps():
     return json.load(open(FILE_SNPS))
 
 
-def save_genotypes():
-    json.dump(get_genotypes_names(), open(FILE_GENOTYPES, 'w'))
+def save_genotypes(force=False):
+    if not os.path.exists(FILE_GENOTYPES) or force:
+        json.dump(get_genotypes_names(), open(FILE_GENOTYPES, 'w'))
 
 
 def load_genotypes():
     return json.load(open(FILE_GENOTYPES))
 
 
-def save_medical_conditions():
-    json.dump(get_medical_conditions_names(), open(FILE_MEDICAL_CONDITIONS, 'w'))
+def save_medical_conditions(force=False):
+    if not os.path.exists(FILE_MEDICAL_CONDITIONS) or force:
+        json.dump(get_medical_conditions_names(), open(FILE_MEDICAL_CONDITIONS, 'w'))
 
 
 def load_medical_conditions():
@@ -178,13 +185,11 @@ def get_snpedia_link(text):
     return "None"
 
 
-def initialize_snpedia():
-    save_genotypes()
-    save_snps()
-    save_medical_conditions()
+def initialize_snpedia(force=False):
+    save_genotypes(force)
+    save_snps(force)
+    save_medical_conditions(force)
 
 
 if __name__ == '__main__':
-    # process_clinvar_release()
-    # main()
     download_all()
