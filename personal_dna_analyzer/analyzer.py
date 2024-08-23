@@ -5,15 +5,18 @@ import pandas as pd
 from tqdm import tqdm
 
 from personal_dna_analyzer.dna_parsers import auto_load_dna
-from personal_dna_analyzer.gwas import get_gwas_html, get_gwas_traits
-from personal_dna_analyzer.snpedia import get_all_snpedia_match_genotypes, load_genotypes
+from personal_dna_analyzer.gwas import get_gwas_html, get_gwas_traits, initialize_gwas
+from personal_dna_analyzer.snpedia import get_all_snpedia_match_genotypes, load_genotypes, initialize_snpedia, \
+    get_snpedia_link
 from personal_dna_analyzer.clinvar import get_clinvar_variant_from_rs, get_clinvar_variant_pathologies, \
-    get_clinvar_rs_pathologies, get_clinvar_variants, print_pathologies_html
+    get_clinvar_rs_pathologies, get_clinvar_variants, print_pathologies_html, initialize_clinvar, get_clinvar_var_link, \
+    get_haplotypes, find_all_haplotypes
 
 
-def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_traits):
+def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_traits, haplotypes, var_to_pathology):
     genotype_infos = get_all_snpedia_match_genotypes(dna, genotypes)
     res = []
+    all_clinvar_variants = []
     for key, value in tqdm(sorted(genotype_infos.items(),
                                   key=lambda x: -(
                                           float(x[1].get("Magnitude", 1)) + len(x[1].get("summary", "")) / 1000.0)),
@@ -21,8 +24,10 @@ def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_trait
         base_rs = key.split("(")[0].lower()
         al1, al2 = key.split("(")[1].replace(")", "").split(";")
         variant, pathos = get_clinvar_variant_from_rs(key, variants_mapping)
+        all_clinvar_variants.append(variant)
         all_pathologies = list(sorted(pathologies.get(base_rs, []), key=lambda x: x.name.lower()))
         variant_pathologies = list(sorted(pathos, key=lambda x: x.name.lower()))
+        all_pathologies = [x for x in all_pathologies if x not in variant_pathologies]
         if not value and not all_pathologies and not variant_pathologies and \
                 (base_rs, al1) not in gwas_traits and (base_rs, al2) not in gwas_traits:
             continue
@@ -42,6 +47,22 @@ def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_trait
         if (base_rs, al2) in gwas_traits:
             temp["GWAS"][al2] = gwas_traits[(base_rs, al2)]
         res.append(temp)
+    h_to_v, v_to_h = haplotypes
+    found_haplotypes = find_all_haplotypes(all_clinvar_variants, h_to_v, v_to_h)
+    for found_haplotype in found_haplotypes:
+        variant_pathologies = list(sorted(var_to_pathology.get(found_haplotype, []), key=lambda x: x.name.lower()))
+        temp = dict()
+        temp["Magnitude"] = "Unknown"
+        temp["Repute"] = "Unknown"
+        temp["summary"] = ""
+        temp["rs"] = "Haplotype: " + h_to_v[found_haplotype]
+        temp["text"] = ""
+        temp["was_on_snpedia"] = False
+        temp["ClinVarAllPathologies"] = []
+        temp["ClinVarVariant"] = found_haplotype
+        temp["ClinVarVariantPathologies"] = variant_pathologies
+        temp["GWAS"] = dict()
+        res.append(temp)
     res = sorted(res, key=lambda x: -score_summary_entry(x))
     return res
 
@@ -60,17 +81,9 @@ def summaries_results_in_html(all_rs):
         if rs["was_on_snpedia"]:
             snpedia_counter += 1
         for pathology in rs["ClinVarVariantPathologies"]:
-            if pathology.name and not pd.isna(pathology.name) and \
-                    pathology.name not in ["not provided", "not specified"]:
-                pathologies_variants.append(pathology.name)
-                if not pd.isna(pathology.is_pathogenic) and "pathogenic" in pathology.is_pathogenic.lower():
-                    pathologies_variants_pathogenic.append(pathology.name)
+            _add_pathology_to_counters(pathologies_variants, pathologies_variants_pathogenic, pathology)
         for pathology in rs["ClinVarAllPathologies"]:
-            if pathology.name and not pd.isna(pathology.name) and \
-                    pathology.name not in ["not provided", "not specified"]:
-                pathologies_all.append(pathology.name)
-                if not pd.isna(pathology.is_pathogenic) and "pathogenic" in pathology.is_pathogenic.lower():
-                    pathologies_all_pathogenic.append(pathology.name)
+            _add_pathology_to_counters(pathologies_all, pathologies_all_pathogenic, pathology)
         gwas = rs["GWAS"]
         for al, value in gwas.items():
             for key, count_or_beta in value.items():
@@ -94,37 +107,46 @@ def summaries_results_in_html(all_rs):
                "associated with " +
                "your variants. Among them, " + str(len(pathologies_variants_pathogenic)) + " were classified as " +
                "pathogenic or likely pathogenic. Here are the most frequent pathogenic traits:</p>")
+    add_most_commons_list(pathologies_variants_pathogenic, res)
+    res.append("<p>On GWAS, we found " + str(len(gwas_traits)) + " different pathologies or traits " +
+               "associated with your variants. Here are the most frequent traits:</p>")
+    add_most_commons_list(gwas_traits, res)
+    res.append("</div>")
+    return "".join(res)
+
+
+def _add_pathology_to_counters(pathologies_variants, pathologies_variants_pathogenic, pathology):
+    if pathology.name and not pd.isna(pathology.name) and \
+            pathology.name not in ["not provided", "not specified"]:
+        pathologies_variants.append(pathology.name)
+        if not pd.isna(pathology.is_pathogenic) and "pathogenic" in pathology.is_pathogenic.lower():
+            pathologies_variants_pathogenic.append(pathology.name)
+
+
+def add_most_commons_list(pathologies_variants_pathogenic, res):
     res.append("<ul>")
     for key, value in pathologies_variants_pathogenic.most_common(10):
         res.append("<li>")
         res.append(key + " (" + str(value) + ")")
         res.append("</li>")
     res.append("</ul>")
-    res.append("<p>On GWAS, we found " + str(len(gwas_traits)) + " different pathologies or traits " +
-               "associated with your variants. Here are the most frequent traits:</p>")
-    res.append("<ul>")
-    for key, value in gwas_traits.most_common(10):
-        res.append("<li>")
-        res.append(key + " (" + str(value) + ")")
-        res.append("</li>")
-    res.append("</ul>")
-    res.append("</div>")
-    return "".join(res)
 
 
-def rs_to_html(rs):
-    clinvar_all_pathologies = print_pathologies_html(rs["ClinVarAllPathologies"])
-    clinvar_variant_pathologies = print_pathologies_html(rs["ClinVarVariantPathologies"])
-    var_link = "Unknown" if rs["ClinVarVariant"] is None \
-        else ('<a class=\"link-dark\" href="https://www.ncbi.nlm.nih.gov/clinvar/variation/' +
-              str(rs["ClinVarVariant"]) + '">' +
-              str(rs["ClinVarVariant"]) + '</a>')
+def get_card_header(rs):
     if rs["Repute"] == "Bad":
         content = '<div class="card text-white bg-danger">'
     elif rs["Repute"] == "Good":
         content = '<div class="card text-white bg-success">'
     else:
         content = '<div class="card bg-light">'
+    return content
+
+
+def rs_to_html(rs):
+    clinvar_all_pathologies = print_pathologies_html(rs["ClinVarAllPathologies"])
+    clinvar_variant_pathologies = print_pathologies_html(rs["ClinVarVariantPathologies"])
+    var_link = get_clinvar_var_link(rs["ClinVarVariant"])
+    content = get_card_header(rs)
     content += """
       <h5 class="card-header">""" + rs["rs"] + """</h5>
       <div class="card-body">
@@ -134,21 +156,17 @@ def rs_to_html(rs):
                ", <span title=\"Good or bad SNP, annotaed by SNPedia community\"><b>Repute</b></span>: " + \
                rs["Repute"] + \
                "<br>" + \
-               "<b>SNPedia Variant</b>: <a  class=\"link-dark\" href=\"https://www.snpedia.com/index.php/" + rs["rs"] + \
-               "\">" + \
-               rs["rs"] + "</a><br>" + \
-               "<b>SNPedia Base SNP</b>: <a  class=\"link-dark\" href=\"https://www.snpedia.com/index.php/" + \
-               rs["rs"].split("(")[0] + "\">" + \
-               rs["rs"].split("(")[0] + "</a><br>" + \
+               "<b>SNPedia Variant</b>: " + get_snpedia_link(rs["rs"]) + "<br>" + \
+               "<b>SNPedia Base SNP</b>: " + get_snpedia_link(rs["rs"].split("(")[0]) + "<br>" + \
                ("<span title=\"ClinVar page of your variant\"><b>ClinVar "
                 "Variant</b></span>: ") + \
                var_link + "<br>" + \
                ("<span title=\"Associated traits/pathologies with your variants on ClinVar\"><b>Your variants "
                 "pathologies (ClinVar)</b></span>: ") + \
                clinvar_variant_pathologies + "<br>" + \
-               ("<span title=\"All pathologies associated with this SNP, not necessary what you have but what others "
-                "have. Interesting to know if you have a good variant\"><b>Other possible variant pathologies, "
-                "not necessary yours (ClinVar)</b></span>: ") + \
+               ("<span title=\"Other pathologies associated with this SNP. "
+                "Interesting to know if you have a good variant\"><b>Pathologies/traits you avoided (ClinVar)"
+                "</b></span>: ") + \
                clinvar_all_pathologies + "<br>" + \
                get_gwas_html(rs) + "<br>" \
                """</p>
@@ -203,8 +221,14 @@ def score_summary_entry(entry):
     n_variant_pathologies = len(entry["ClinVarVariantPathologies"])
     n_pathogenic = len([x for x in entry["ClinVarVariantPathologies"] if not pd.isna(x.is_pathogenic) and
                         "pathogenic" in x.is_pathogenic.lower()])
-    return float(magnitude) / 5.0 + n_gwas / 20.0 + min((n_pathologies - n_variant_pathologies), 30) / 60.0 + \
+    return float(magnitude) / 5.0 + n_gwas / 20.0 + min(n_pathologies, 30) / 60.0 + \
         n_pathogenic / 5.0 + min((n_variant_pathologies - n_pathogenic), 10) / 20.0
+
+
+def initialize_all():
+    initialize_gwas()
+    initialize_snpedia()
+    initialize_clinvar()
 
 
 def main(input_filename, output_filename):
@@ -214,7 +238,9 @@ def main(input_filename, output_filename):
     pathology_mapping = get_clinvar_variant_pathologies()
     rs_pathologies = get_clinvar_rs_pathologies(pathology_mapping)
     variants_mapping = get_clinvar_variants(pathology_mapping)
-    all_rss = get_summaries_dict(dna, genotypes, rs_pathologies, variants_mapping, gwas_traits)
+    haplotypes = get_haplotypes()
+    all_rss = get_summaries_dict(dna, genotypes, rs_pathologies, variants_mapping, gwas_traits, haplotypes,
+                                 pathology_mapping)
     html = get_html_page(all_rss)
     with open(output_filename, "w") as f:
         f.write(html)

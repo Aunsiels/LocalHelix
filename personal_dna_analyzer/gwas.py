@@ -2,6 +2,7 @@ import re
 
 import pandas as pd
 from tqdm import tqdm
+import urllib.request
 
 
 def get_gwas_html(rs):
@@ -38,7 +39,7 @@ def get_gwas_traits():
                        for x in df.columns}, inplace=True)
     df.fillna("", inplace=True)
     res = dict()
-    for row in tqdm(df.itertuples(), desc="Loading GWAS traits"):
+    for row in tqdm(df.itertuples(), desc="Loading GWAS traits", total=len(df)):
         # disease = getattr(row, "DISEASE_TRAIT")
         snp = getattr(row, "SNPS")
         if "-" in getattr(row, "STRONGEST_SNP_RISK_ALLELE"):
@@ -59,3 +60,7 @@ def get_gwas_traits():
         res[key][value][0] += 1
         res[key][value][1].append(or_or_beta)
     return res
+
+
+def initialize_gwas():
+    urllib.request.urlretrieve("https://www.ebi.ac.uk/gwas/api/search/downloads/alternative", "gwas_associations.tsv")

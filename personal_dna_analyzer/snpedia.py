@@ -88,7 +88,8 @@ def get_page(page):
     try:
         response_json = response.json()
     except requests.exceptions.JSONDecodeError:
-        print("Bizarre")
+        print("Strange", page)
+        print(response.content.decode("utf-8"))
         response_json = json.loads(response.content.decode("utf-8"))
     raw_html = response_json['parse']['text']['*']
     return raw_html
@@ -157,7 +158,7 @@ def get_all_snpedia_match_genotypes(dna, genotypes):
     known_genotypes, remaining = separate_snpedia_variants(dna, genotypes)
     res = {}
     counter = 0
-    for genotype in known_genotypes:
+    for genotype in tqdm(known_genotypes, desc="Gathering SNPedia information"):
         res[genotype], exists = get_info_genotype(genotype, autodump=False)
         if exists:
             counter += 1
@@ -168,6 +169,19 @@ def get_all_snpedia_match_genotypes(dna, genotypes):
     for r in remaining:
         res[r] = dict()
     return res
+
+
+def get_snpedia_link(text):
+    if text and text.lower().startswith("rs"):
+        return "<a  class=\"link-dark\" href=\"https://www.snpedia.com/index.php/" + text + \
+                   "\">" + text + "</a>"
+    return "None"
+
+
+def initialize_snpedia():
+    save_genotypes()
+    save_snps()
+    save_medical_conditions()
 
 
 if __name__ == '__main__':

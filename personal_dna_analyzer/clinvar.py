@@ -2,6 +2,7 @@ import gzip
 import json
 from collections import namedtuple
 from xml.etree.ElementTree import iterparse
+import urllib.request
 
 import pandas as pd
 from tqdm import tqdm
@@ -98,6 +99,41 @@ def get_phenotype_medgen_ids(row):
     values = set(Pathology(str(x), y, "", 0, "")
                  for x, y in zip(ids_filtered, row.PhenotypeList.split("|")))
     return values
+
+
+def get_haplotypes():
+    df = pd.read_csv("clinvar_haplotypes.tsv", sep="\t")
+    h_to_v = dict()
+    v_to_h = dict()
+    for row in tqdm(df.itertuples(), total=len(df), desc="Loading haplotypes"):
+        haplotype = row.variation_id
+        h_to_v[haplotype] = []
+        for v in [int(x) for x in row.variants.split(";") if x]:
+            if v not in v_to_h:
+                v_to_h[v] = []
+            v_to_h[v].append(haplotype)
+            h_to_v[haplotype].append(v)
+    return h_to_v, v_to_h
+
+
+def find_all_haplotypes(variants, h_to_v, v_to_h):
+    possible_haplotypes = set()
+    for variant in variants:
+        for haplotype in v_to_h.get(variant, []):
+            possible_haplotypes.add(haplotype)
+    variants = set(variants)
+    res = []
+    for haplotype in possible_haplotypes:
+        if all(x in variants for x in h_to_v.get(haplotype, [])):
+            res.append(haplotype)
+    return res
+
+
+def get_clinvar_var_link(text):
+    return "Unknown" if text is None \
+        else ('<a class=\"link-dark\" href="https://www.ncbi.nlm.nih.gov/clinvar/variation/' +
+              str(text) + '">' +
+              str(text) + '</a>')
 
 
 def get_clinvar_variant_from_rs(rs_full, mapping):
@@ -303,6 +339,12 @@ def print_pathologies_html(pathos):
         res.append("</li>")
     res.append("</ul>")
     return "".join(res)
+
+
+def initialize_clinvar():
+    url = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/xml/ClinVarVCVRelease_00-latest.xml.gz"
+    urllib.request.urlretrieve(url, "ClinVarVCVRelease_00-latest.xml.gz")
+    process_clinvar_release()
 
 
 Pathology = namedtuple("Pathology", ["condition_id", "name", "is_pathogenic",
