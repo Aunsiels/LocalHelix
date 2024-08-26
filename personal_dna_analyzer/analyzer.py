@@ -7,14 +7,14 @@ from tqdm import tqdm
 from personal_dna_analyzer.dna_parsers import auto_load_dna
 from personal_dna_analyzer.gwas import get_gwas_html, get_gwas_traits, initialize_gwas
 from personal_dna_analyzer.snpedia import get_all_snpedia_match_genotypes, load_genotypes, initialize_snpedia, \
-    get_snpedia_link
+    get_snpedia_link, load_snps
 from personal_dna_analyzer.clinvar import get_clinvar_variant_from_rs, get_clinvar_variant_pathologies, \
     get_clinvar_rs_pathologies, get_clinvar_variants, print_pathologies_html, initialize_clinvar, get_clinvar_var_link, \
     get_haplotypes, find_all_haplotypes
 
 
-def get_summaries_dict(dna, genotypes, pathologies, variants_mapping, gwas_traits, haplotypes, var_to_pathology):
-    genotype_infos = get_all_snpedia_match_genotypes(dna, genotypes)
+def get_summaries_dict(dna, genotypes, snps, pathologies, variants_mapping, gwas_traits, haplotypes, var_to_pathology):
+    genotype_infos = get_all_snpedia_match_genotypes(dna, genotypes, snps)
     res = []
     all_clinvar_variants = []
     for key, value in tqdm(sorted(genotype_infos.items(),
@@ -224,8 +224,8 @@ def score_summary_entry(entry):
     n_pathologies = len(entry["ClinVarAllPathologies"])
     n_variant_pathologies = sum(len(x) for x in entry["ClinVarVariantPathologies"])
     n_pathogenic = len([x for y in entry["ClinVarVariantPathologies"] for x in y if not pd.isna(x.is_pathogenic) and
-                        "pathogenic" in x.is_pathogenic.lower()])
-    return float(magnitude) / 5.0 + n_gwas / 20.0 + min(n_pathologies, 30) / 60.0 + \
+                        "pathogenic" in x.is_pathogenic.lower() and "Conflicting" not in x.is_pathogenic])
+    return float(magnitude) / 2.0 + n_gwas / 20.0 + min(n_pathologies, 30) / 60.0 + \
         n_pathogenic / 5.0 + min((n_variant_pathologies - n_pathogenic), 10) / 20.0
 
 
@@ -239,12 +239,13 @@ def main(input_filename, output_filename, force_reload=False):
     initialize_all(force=force_reload)
     dna = auto_load_dna(input_filename)
     genotypes = load_genotypes()
+    snps = load_snps()
     gwas_traits = get_gwas_traits()
     pathology_mapping = get_clinvar_variant_pathologies()
     rs_pathologies = get_clinvar_rs_pathologies(pathology_mapping)
     variants_mapping = get_clinvar_variants(pathology_mapping)
     haplotypes = get_haplotypes()
-    all_rss = get_summaries_dict(dna, genotypes, rs_pathologies, variants_mapping, gwas_traits, haplotypes,
+    all_rss = get_summaries_dict(dna, genotypes, snps, rs_pathologies, variants_mapping, gwas_traits, haplotypes,
                                  pathology_mapping)
     html = get_html_page(all_rss)
     with open(output_filename, "w") as f:

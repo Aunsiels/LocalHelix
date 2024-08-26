@@ -16,3 +16,10 @@ def my_hook(t):
         last_b[0] = b
 
     return inner
+
+
+BASES = {"A": "T", "T": "A", "G": "C", "C": "G", "-": "-"}
+
+
+def get_complement(seq):
+    return list(sorted(BASES[x] for x in seq))

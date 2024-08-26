@@ -6,6 +6,8 @@ from bs4 import BeautifulSoup
 import pickledb
 from tqdm import tqdm
 
+from personal_dna_analyzer.dna_parsers import get_full_genotype
+
 FILE_SNPS = 'snps.json'
 FILE_GENOTYPES = "genotypes.json"
 FILE_MEDICAL_CONDITIONS = "medical_conditions.json"
@@ -124,12 +126,40 @@ def parse_genotype(genotype):
     return res
 
 
-def separate_snpedia_variants(dna, genotypes):
-    my_genotypes = set(key[0].upper() + key[1:].lower() + "(" + value["genotype"][0].upper() + ";" +
-                       value["genotype"][1].upper() + ")"
-                       for key, value in dna.items())
-    intersection = set(genotypes).intersection(my_genotypes)
-    return intersection, my_genotypes.difference(intersection)
+def separate_snpedia_variants(dna, genotypes, snps):
+    found, remaining = set(), set()
+    genotypes = set(genotypes)
+    counter = 0
+    for key, value in tqdm(dna.items(), total=len(dna), desc="Separating SNPedia variants"):
+        genotype = get_full_genotype(key, value["forward"])
+        forward_genotype = genotype
+        backward_genotype = get_full_genotype(key, value["backward"])
+        if key[0].upper() + key[1:].lower() not in snps or \
+                (forward_genotype not in genotypes and backward_genotype not in genotypes):
+            remaining.add(forward_genotype)
+            continue
+        orientation, exists = get_orientation(key, autodump=False)
+        if orientation is None:
+            remaining.add(forward_genotype)
+            continue
+        if orientation == "plus":
+            genotype = forward_genotype
+        elif orientation == "minus":
+            genotype = backward_genotype
+        else:
+            DATA_GENOTYPES.dump()
+            ValueError("Unknown orientation " + str(orientation))
+        if genotype in genotypes:
+            found.add((genotype, forward_genotype))
+        else:
+            remaining.add(forward_genotype)
+        if exists:
+            counter += 1
+        if counter % 100 == 0:
+            DATA_GENOTYPES.dump()
+    if counter > 0:
+        DATA_GENOTYPES.dump()
+    return found, remaining
 
 
 def get_info_genotype(genotype, autodump=True):
@@ -140,6 +170,15 @@ def get_info_genotype(genotype, autodump=True):
     if autodump:
         DATA_GENOTYPES.dump()
     return info, False
+
+
+def get_orientation(genotype, autodump=True):
+    if "(" in genotype:
+        genotype = genotype.split("(")[0]
+    info, exists = get_info_genotype(genotype, autodump)
+    if "Orientation" not in info:
+        return None, True
+    return info["Orientation"], exists
 
 
 def download_all():
@@ -161,12 +200,12 @@ def download_all():
         print("Saved")
 
 
-def get_all_snpedia_match_genotypes(dna, genotypes):
-    known_genotypes, remaining = separate_snpedia_variants(dna, genotypes)
+def get_all_snpedia_match_genotypes(dna, genotypes, snps):
+    known_genotypes, remaining = separate_snpedia_variants(dna, genotypes, snps)
     res = {}
     counter = 0
     for genotype in tqdm(known_genotypes, desc="Gathering SNPedia information"):
-        res[genotype], exists = get_info_genotype(genotype, autodump=False)
+        res[genotype[1]], exists = get_info_genotype(genotype[0], autodump=False)
         if exists:
             counter += 1
         if counter % 100 == 0:

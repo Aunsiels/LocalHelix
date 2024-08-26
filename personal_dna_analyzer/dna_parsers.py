@@ -1,8 +1,7 @@
 import pandas as pd
 from tqdm import tqdm
 
-
-BASES = {"A": "T", "T": "A", "G": "C", "C": "G", "-": "-"}
+from personal_dna_analyzer.utils import get_complement
 
 
 def read_my_heritage(path):
@@ -10,9 +9,8 @@ def read_my_heritage(path):
     res = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading MyHeritage data"):
         genotype = list(sorted(row.RESULT))
-        res[row.RSID] = {"chromosome": row.CHROMOSOME,
-                         "position": row.POSITION,
-                         "genotype": genotype}
+        res[row.RSID] = {"forward": genotype,
+                         "backward": get_complement(genotype)}
     return res
 
 
@@ -21,9 +19,8 @@ def read_23andme(path):
     res = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading 23andme data"):
         genotype = list(sorted(row.genotype))
-        res[row.rsid] = {"chromosome": row.chromosome,
-                         "position": row.position,
-                         "genotype": genotype}
+        res[row.rsid] = {"forward": genotype,
+                         "backward": get_complement(genotype)}
     return res
 
 
@@ -32,10 +29,14 @@ def read_ancestry(path):
     res = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading Ancestry data"):
         genotype = list(sorted([row.allele1, row.allele2]))
-        res[row.rsid] = {"chromosome": row.chromosome,
-                         "position": row.position,
-                         "genotype": genotype}
+        res[row.rsid] = {"forward": genotype,
+                         "backward": get_complement(genotype)}
     return res
+
+
+def get_full_genotype(rs, alleles):
+    return rs[0].upper() + rs[1:].lower() + "(" + alleles[0].upper() + ";" + \
+        alleles[1].upper() + ")"
 
 
 def auto_load_dna(path):

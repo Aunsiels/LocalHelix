@@ -8,7 +8,7 @@ import urllib.request
 import pandas as pd
 from tqdm import tqdm
 
-from personal_dna_analyzer.utils import my_hook
+from personal_dna_analyzer.utils import my_hook, BASES
 
 HAPLOTYPES_TSV = "clinvar_haplotypes.tsv"
 
@@ -227,7 +227,7 @@ def get_variation(variation):
             current = previous.pop()
         row.clear()
     xml_file.close()
-    with open("example2.json", "w") as f:
+    with open("example3.json", "w") as f:
         json.dump(rows, f)
 
 
@@ -289,11 +289,13 @@ def process_variation(var_dict, variant_file, pathology_file, haplotype_file):
         if "Location" in simple_allele:
             location = simple_allele["Location"][0]
             if "SequenceLocation" in location:
-                attrs_location = location["SequenceLocation"][0]["attrs"]
-                if "alternateAlleleVCF" in attrs_location:
-                    modification_allele = attrs_location["alternateAlleleVCF"]
-                elif "Strand" in attrs_location:
-                    modification_allele = attrs_location["Strand"]
+                for seq in location["SequenceLocation"]:
+                    attrs_location = seq["attrs"]
+                    if attrs_location["Assembly"] == "GRCh37":
+                        if "alternateAlleleVCF" in attrs_location:
+                            modification_allele = attrs_location["alternateAlleleVCF"]
+                        elif "Strand" in attrs_location:
+                            modification_allele = attrs_location["Strand"]
     variant_file.write("\t".join((variation_id, variation_name, variation_type, rs_id, modification_allele)) + "\n")
     if "Haplotype" in classified_record:
         haplotype = classified_record["Haplotype"][0]
@@ -381,4 +383,5 @@ Pathology = namedtuple("Pathology", ["condition_id", "name", "is_pathogenic",
                                      "n_submissions", "status"])
 
 if __name__ == '__main__':
-    process_clinvar_release()
+    get_variation(17525)
+    # process_clinvar_release()
