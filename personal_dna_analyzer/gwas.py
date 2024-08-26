@@ -27,7 +27,7 @@ def get_gwas_html(rs):
             else:
                 or_beta_text = "Reported <span text=\">1 accentuate the trait, <1 reduces the trait\">Odd Ratio</span>:"
             or_beta_text += " [" + ", ".join(str(x) for x in or_beta) + "]"
-            temp.append('<a  class=\"link-dark\" href=' + trait_uri + '">' + mapped_trait + "</a> (" + text +
+            temp.append('<a  class=\"link-dark\" href="' + trait_uri + '">' + mapped_trait + "</a> (" + text +
                         str(count) + " study(s), " + or_beta_text + ")")
         res += ", ".join(temp)
         res += "<br>"

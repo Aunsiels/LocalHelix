@@ -35,7 +35,7 @@ def read_ancestry(path):
 
 
 def get_full_genotype(rs, alleles):
-    return rs[0].upper() + rs[1:].lower() + "(" + alleles[0].upper() + ";" + \
+    return "Rs" + rs[2:] + "(" + alleles[0].upper() + ";" + \
         alleles[1].upper() + ")"
 
 

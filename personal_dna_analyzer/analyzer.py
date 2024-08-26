@@ -153,11 +153,18 @@ def rs_to_html(rs):
     clinvar_variant_pathologies = [print_pathologies_html(x) for x in rs["ClinVarVariantPathologies"]]
     var_links = [get_clinvar_var_link(x) for x in rs["ClinVarVariants"]]
     content = get_card_header(rs)
+    snpedia_text = [x.replace("href=\"/index.php",
+                              "href=\"https://www.snpedia.com/index.php")
+                    .replace("href=\"//www.ncbi.nlm.nih.gov/pubmed",
+                             "href=\"https://www.ncbi.nlm.nih.gov/pubmed")
+                    .replace("href=",
+                             "class=\"link-dark\" href=")
+                    for x in rs["text"]]
     content += """
       <h5 class="card-header">""" + rs["rs"] + """</h5>
       <div class="card-body">
         <h5 class="card-title">""" + rs["summary"] + """</h5>
-        <p class="card-text">""" + "<br>".join(rs["text"]) + """
+        <p class="card-text">""" + " ".join(snpedia_text) + """
         <br> <span title=\"Importance annotated by SNPedia community\"><b>Magnitude</b></span>: """ + rs["Magnitude"] + \
                ", <span title=\"Good or bad SNP, annotaed by SNPedia community\"><b>Repute</b></span>: " + \
                rs["Repute"] + \

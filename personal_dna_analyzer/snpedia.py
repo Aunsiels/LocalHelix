@@ -129,12 +129,13 @@ def parse_genotype(genotype):
 def separate_snpedia_variants(dna, genotypes, snps):
     found, remaining = set(), set()
     genotypes = set(genotypes)
+    snps = set(snps)
     counter = 0
     for key, value in tqdm(dna.items(), total=len(dna), desc="Separating SNPedia variants"):
         genotype = get_full_genotype(key, value["forward"])
         forward_genotype = genotype
         backward_genotype = get_full_genotype(key, value["backward"])
-        if key[0].upper() + key[1:].lower() not in snps or \
+        if "Rs" + key[2:] not in snps or \
                 (forward_genotype not in genotypes and backward_genotype not in genotypes):
             remaining.add(forward_genotype)
             continue
@@ -153,10 +154,10 @@ def separate_snpedia_variants(dna, genotypes, snps):
             found.add((genotype, forward_genotype))
         else:
             remaining.add(forward_genotype)
-        if exists:
+        if not exists:
             counter += 1
-        if counter % 100 == 0:
-            DATA_GENOTYPES.dump()
+            if counter % 100 == 0:
+                DATA_GENOTYPES.dump()
     if counter > 0:
         DATA_GENOTYPES.dump()
     return found, remaining
@@ -177,7 +178,7 @@ def get_orientation(genotype, autodump=True):
         genotype = genotype.split("(")[0]
     info, exists = get_info_genotype(genotype, autodump)
     if "Orientation" not in info:
-        return None, True
+        return None, exists
     return info["Orientation"], exists
 
 
@@ -206,10 +207,10 @@ def get_all_snpedia_match_genotypes(dna, genotypes, snps):
     counter = 0
     for genotype in tqdm(known_genotypes, desc="Gathering SNPedia information"):
         res[genotype[1]], exists = get_info_genotype(genotype[0], autodump=False)
-        if exists:
+        if not exists:
             counter += 1
-        if counter % 100 == 0:
-            DATA_GENOTYPES.dump()
+            if counter % 100 == 0:
+                DATA_GENOTYPES.dump()
     if counter > 0:
         DATA_GENOTYPES.dump()
     for r in remaining:
