@@ -45,14 +45,14 @@ def get_gwas_traits():
     df.fillna("", inplace=True)
     res = dict()
     for row in tqdm(df.itertuples(), desc="Loading GWAS traits", total=len(df)):
-        # disease = getattr(row, "DISEASE_TRAIT")
+        disease = getattr(row, "DISEASE_TRAIT")
         snp = getattr(row, "SNPS")
         if "-" in getattr(row, "STRONGEST_SNP_RISK_ALLELE"):
             abnormal = getattr(row, "STRONGEST_SNP_RISK_ALLELE").split("-")[1]
         else:
             abnormal = ""
         text = getattr(row, "p_CI_TEXT")
-        mapped_trait = getattr(row, "MAPPED_TRAIT")
+        mapped_trait = disease + "(" + getattr(row, "MAPPED_TRAIT") + ")"
         trait_uri = getattr(row, "MAPPED_TRAIT_URI")
         or_or_beta = getattr(row, "OR_or_BETA")
         key = (snp, abnormal)

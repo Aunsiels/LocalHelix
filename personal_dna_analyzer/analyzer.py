@@ -7,7 +7,7 @@ from tqdm import tqdm
 from personal_dna_analyzer.dna_parsers import auto_load_dna
 from personal_dna_analyzer.gwas import get_gwas_html, get_gwas_traits, initialize_gwas
 from personal_dna_analyzer.snpedia import get_all_snpedia_match_genotypes, load_genotypes, initialize_snpedia, \
-    get_snpedia_link, load_snps
+    get_snpedia_link, load_snps, set_snpedia_info
 from personal_dna_analyzer.clinvar import get_clinvar_variant_from_rs, get_clinvar_variant_pathologies, \
     get_clinvar_rs_pathologies, get_clinvar_variants, print_pathologies_html, initialize_clinvar, get_clinvar_var_link, \
     get_haplotypes, find_all_haplotypes
@@ -37,12 +37,8 @@ def get_summaries_dict(dna, genotypes, snps, pathologies, variants_mapping, gwas
                 (base_rs, al1) not in gwas_traits and (base_rs, al2) not in gwas_traits:
             continue
         temp = dict()
-        temp["Magnitude"] = str(value.get("Magnitude", "Unknown"))
-        temp["Repute"] = value.get("Repute", "Unknown")
-        temp["summary"] = value.get("summary", "")
         temp["rs"] = key
-        temp["text"] = value.get("text", "")
-        temp["was_on_snpedia"] = len(value) != 0
+        set_snpedia_info(value, temp)
         temp["ClinVarAllPathologies"] = all_pathologies
         temp["ClinVarVariants"] = variant_list
         temp["ClinVarVariantPathologies"] = variant_pathologies_list
@@ -75,6 +71,7 @@ def get_summaries_dict(dna, genotypes, snps, pathologies, variants_mapping, gwas
 def summaries_results_in_html(all_rs):
     res = ["<div>",
            "<h2>Summary of the results</h2>",
+           "<b>Do not use for medical advice and always consult your doctor.</b>",
            "<p>We found matches in our databases for " + str(len(all_rs)) + " variants.</p>"]
     snpedia_counter = 0
     pathologies_all = []
@@ -153,13 +150,17 @@ def rs_to_html(rs):
     clinvar_variant_pathologies = [print_pathologies_html(x) for x in rs["ClinVarVariantPathologies"]]
     var_links = [get_clinvar_var_link(x) for x in rs["ClinVarVariants"]]
     content = get_card_header(rs)
+    if type(rs["text"]) is str:
+        rs_text = [rs["text"]]
+    else:
+        rs_text = rs["text"]
     snpedia_text = [x.replace("href=\"/index.php",
                               "href=\"https://www.snpedia.com/index.php")
                     .replace("href=\"//www.ncbi.nlm.nih.gov/pubmed",
                              "href=\"https://www.ncbi.nlm.nih.gov/pubmed")
                     .replace("href=",
                              "class=\"link-dark\" href=")
-                    for x in rs["text"]]
+                    for x in rs_text]
     content += """
       <h5 class="card-header">""" + rs["rs"] + """</h5>
       <div class="card-body">
@@ -223,8 +224,8 @@ def get_html_page(all_rss):
 
 def score_summary_entry(entry):
     magnitude = 0
-    if entry["Magnitude"] != "Unknown":
-        magnitude = entry["Magnitude"]
+    if entry["Magnitude"] != "Unknown" and entry["Magnitude"] != "":
+        magnitude = float(entry["Magnitude"])
     n_gwas = 0
     for value in entry["GWAS"]:
         n_gwas += len(value)
@@ -263,7 +264,7 @@ def main(input_filename, output_filename, force_reload=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         prog="Personal DNA Analyzer",
-        description="This program analysis your DNA to find interesting insights. Do not use for medical advice and"
+        description="This program analyzes your DNA to find interesting insights. Do not use for medical advice and"
                     "always consult your doctor."
     )
     parser.add_argument("-i", "--input", required=True,

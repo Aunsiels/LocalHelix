@@ -1,19 +1,28 @@
 import json
 import os.path
+import re
 
 import requests
 from bs4 import BeautifulSoup
 import pickledb
 from tqdm import tqdm
+import wikitextparser as wtp
 
 from personal_dna_analyzer.dna_parsers import get_full_genotype
 
 FILE_SNPS = 'snps.json'
 FILE_GENOTYPES = "genotypes.json"
 FILE_MEDICAL_CONDITIONS = "medical_conditions.json"
-DATA_GENOTYPES = pickledb.load('data_genotypes.db', False)
+DATA_GENOTYPES_HTML = pickledb.load('data_genotypes.db', False)
+DATA_GENOTYPES_WIKITEXT = pickledb.load('data_wikitext_genotypes.db', False)
+USE_WIKITEXT = True
+if USE_WIKITEXT:
+    DATA_GENOTYPES = DATA_GENOTYPES_WIKITEXT
+else:
+    DATA_GENOTYPES = DATA_GENOTYPES_HTML
 
 URL_ENDPOINT = "https://bots.snpedia.com/api.php"
+REGEX_PMID = re.compile(r"\[PMID (?P<id>\d*)\]")
 
 
 def get_all_category(category_name):
@@ -85,6 +94,86 @@ def load_medical_conditions():
     return json.load(open(FILE_MEDICAL_CONDITIONS))
 
 
+def get_wikitexts(pages):
+    if type(pages) is str:
+        pages = pages.split("|")
+    if len(pages) == 0:
+        return dict()
+    if len(pages) > 50:
+        res = dict()
+        i = 0
+        for i in range(len(pages) // 50):
+            res.update(get_wikitexts(pages[i * 50:(i + 1) * 50]))
+        res.update(get_wikitexts(pages[(i + 1) * 50:]))
+        return res
+    pages = "|".join(pages)
+    params = {
+        'action': 'query',
+        'titles': pages,
+        'prop': 'revisions',
+        "format": "json",
+        "rvprop": "content",
+        "rvslots": "main"
+    }
+    response = requests.get(URL_ENDPOINT, params=params)
+    response_json = response.json()
+    res = dict()
+    for page in response_json["query"]["pages"].values():
+        title = page["title"]
+        if "revisions" in page:
+            wikitext = page["revisions"][0]["slots"]["main"]["*"]
+        else:
+            wikitext = ""
+        res[title] = parse_wikitext(wikitext)
+    return res
+
+
+def parse_wikitext(wikitext):
+    parsed = wtp.parse(wikitext)
+    text = wikitext
+    res = dict()
+    for template in parsed.templates:
+        t_name = template.name.strip()
+        if t_name == "on chip":
+            text = text.replace(template.string, "")
+        elif t_name == "PMID":
+            text = text.replace(template.string,
+                                "[<a href=\"https://pubmed.ncbi.nlm.nih.gov/" + template.arguments[
+                                    0].value + "\"\>PMID "
+                                + template.arguments[0].value + "</a>]")
+        elif t_name == "PMID Auto":
+            arguments = {x.name.strip(): x.value.strip() for x in template.arguments}
+            title = arguments["PMID"]
+            if "Title" in arguments:
+                title = arguments["Title"]
+            text = text.replace(template.string,
+                                "[<a href=\"https://pubmed.ncbi.nlm.nih.gov/" + arguments["PMID"] + "\"\>PMID "
+                                + arguments["PMID"] + "</a>] " + title)
+        else:
+            if t_name not in res:
+                res[t_name] = []
+            res[t_name].append(dict())
+            for arg in template.arguments:
+                res[t_name][-1][arg.name.strip()] = arg.value.strip()
+            text = text.replace(template.string, "")
+    for wikilink in parsed.wikilinks:
+        text = text.replace(wikilink.string, "<a href=\"https://www.snpedia.com/index.php/" + wikilink.target + "\">" +
+                            wikilink.target + "</a>")
+    for external_link in parsed.external_links:
+        text_url = external_link.text
+        if external_link.text is None:
+            text_url = external_link.url
+        text = text.replace(external_link.string, "<a href=\"" + external_link.url + "\">" + text_url + "</a>")
+    for match in REGEX_PMID.finditer(text):
+        pmid_id = match.group("id")
+        text = text.replace(match.string,
+                            "[<a href=\"https://pubmed.ncbi.nlm.nih.gov/" + pmid_id +"\"\>PMID "
+                            + pmid_id + "</a>]")
+    res["html"] = text.strip().replace("\n", "<br>")
+    res["from"] = "wikitext"
+    return res
+
+
 def get_page(page):
     params = {
         'action': 'parse',
@@ -104,7 +193,7 @@ def get_page(page):
     return raw_html
 
 
-def parse_genotype(genotype):
+def parse_genotype_from_html(genotype):
     raw_html = get_page(genotype)
     soup = BeautifulSoup(raw_html, 'html.parser')
     rows = soup.find_all('tr')
@@ -123,6 +212,7 @@ def parse_genotype(genotype):
         else:
             print(columns)
     res["text"] = [str(x) for x in soup.find_all("p") if len(x.text.strip()) > 0]
+    res["from"] = "html"
     return res
 
 
@@ -148,7 +238,7 @@ def separate_snpedia_variants(dna, genotypes, snps):
         elif orientation == "minus":
             genotype = backward_genotype
         else:
-            DATA_GENOTYPES.dump()
+            DATA_GENOTYPES_HTML.dump()
             ValueError("Unknown orientation " + str(orientation))
         if genotype in genotypes:
             found.add((genotype, forward_genotype))
@@ -157,16 +247,20 @@ def separate_snpedia_variants(dna, genotypes, snps):
         if not exists:
             counter += 1
             if counter % 100 == 0:
-                DATA_GENOTYPES.dump()
+                DATA_GENOTYPES_HTML.dump()
     if counter > 0:
-        DATA_GENOTYPES.dump()
+        DATA_GENOTYPES_HTML.dump()
     return found, remaining
 
 
 def get_info_genotype(genotype, autodump=True):
+    genotype = genotype.replace("rs", "Rs")
     if DATA_GENOTYPES.exists(genotype):
         return DATA_GENOTYPES.get(genotype), True
-    info = parse_genotype(genotype)
+    if USE_WIKITEXT:
+        info = get_wikitexts(genotype)[genotype]
+    else:
+        info = parse_genotype_from_html(genotype)
     DATA_GENOTYPES.set(genotype, info)
     if autodump:
         DATA_GENOTYPES.dump()
@@ -174,34 +268,103 @@ def get_info_genotype(genotype, autodump=True):
 
 
 def get_orientation(genotype, autodump=True):
-    if "(" in genotype:
-        genotype = genotype.split("(")[0]
+    genotype = get_root_name(genotype)
     info, exists = get_info_genotype(genotype, autodump)
-    if "Orientation" not in info:
+    if (("from" not in info or info["from"] == "html") and "Orientation" not in info) or \
+            ("from" in info and info["from"] == "wikitext" and (
+                    "Rsnum" not in info or "Orientation" not in info["Rsnum"][0])):
         return None, exists
-    return info["Orientation"], exists
+    if "from" not in info or info["from"] == "html":
+        return info["Orientation"], exists
+    else:
+        return info["Rsnum"][0]["Orientation"], exists
 
 
-def download_all():
+def get_root_name(genotype):
+    if "(" in genotype:
+        return genotype.split("(")[0]
+    return genotype
+
+
+def set_snpedia_info(info, res_dict):
+    if "from" not in info or info["from"] == "html":
+        res_dict["Magnitude"] = str(info.get("Magnitude", "Unknown"))
+        res_dict["Repute"] = info.get("Repute", "Unknown")
+        res_dict["summary"] = info.get("summary", "")
+        res_dict["text"] = info.get("text", "")
+        res_dict["was_on_snpedia"] = len(info) != 0
+    else:
+        genotype = info.get("Genotype", dict())
+        if genotype:
+            res_dict["Magnitude"] = str(genotype[0].get("magnitude", "Unknown"))
+            res_dict["Repute"] = str(genotype[0].get("repute", "Unknown"))
+            res_dict["summary"] = str(genotype[0].get("summary", ""))
+            res_dict["text"] = info.get("html", "")
+            res_dict["was_on_snpedia"] = len(info) != 0
+        else:
+            res_dict["Magnitude"] = "Unknown"
+            res_dict["Repute"] = "Unknown"
+            res_dict["summary"] = ""
+            res_dict["text"] = info.get("html", "")
+            res_dict["was_on_snpedia"] = len(info) != 0
+
+
+def download_all_html():
     genotypes = load_genotypes()
     genotypes = [x for x in genotypes if x.startswith("Rs")]
+    download_genotypes_html(genotypes)
+
+
+def download_genotypes_html(genotypes):
     counter = 0
     for genotype in tqdm(genotypes):
-        if genotype.startswith("Rs") and not DATA_GENOTYPES.exists(genotype):
+        if genotype.startswith("Rs") and not DATA_GENOTYPES_HTML.exists(genotype):
             counter += 1
-            info = parse_genotype(genotype)
-            DATA_GENOTYPES.set(genotype, info)
+            info = parse_genotype_from_html(genotype)
+            DATA_GENOTYPES_HTML.set(genotype, info)
             if counter % 100 == 0:
                 print("Saving...")
-                DATA_GENOTYPES.dump()
+                DATA_GENOTYPES_HTML.dump()
                 print("Saved")
     if counter > 0:
         print("Saving...")
-        DATA_GENOTYPES.dump()
+        DATA_GENOTYPES_HTML.dump()
         print("Saved")
 
 
+def download_genotypes_wikitext(genotypes):
+    counter = 0
+    genotypes = [genotype for genotype in genotypes if not DATA_GENOTYPES_WIKITEXT.exists(genotype)]
+    for counter in tqdm(range(len(genotypes) // 100), total=len(genotypes) // 100,
+                        desc="Predownloading relevant pages"):
+        for key, value in get_wikitexts(genotypes[counter * 100:(counter + 1) * 100]).items():
+            DATA_GENOTYPES_WIKITEXT.set(key, value)
+        DATA_GENOTYPES_WIKITEXT.dump()
+    for key, value in get_wikitexts(genotypes[(counter + 1) * 100:]).items():
+        DATA_GENOTYPES_WIKITEXT.set(key, value)
+    DATA_GENOTYPES_WIKITEXT.dump()
+
+
+def get_all_snpedia_entities(dna, genotypes, snps):
+    res = set()
+    genotypes = set(genotypes)
+    snps = set(snps)
+    for key, value in dna.items():
+        genotype = get_full_genotype(key, value["forward"])
+        forward_genotype = genotype
+        backward_genotype = get_full_genotype(key, value["backward"])
+        if "Rs" + key[2:] in snps:
+            res.add("Rs" + key[2:])
+        if forward_genotype in genotypes:
+            res.add(forward_genotype)
+        if backward_genotype in genotypes:
+            res.add(backward_genotype)
+    return list(res)
+
+
 def get_all_snpedia_match_genotypes(dna, genotypes, snps):
+    if USE_WIKITEXT:
+        download_genotypes_wikitext(get_all_snpedia_entities(dna, genotypes, snps))
     known_genotypes, remaining = separate_snpedia_variants(dna, genotypes, snps)
     res = {}
     counter = 0
@@ -232,4 +395,4 @@ def initialize_snpedia(force=False):
 
 
 if __name__ == '__main__':
-    download_all()
+    download_all_html()

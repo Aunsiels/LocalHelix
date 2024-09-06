@@ -132,7 +132,7 @@ def get_haplotypes():
 
 def find_all_haplotypes(variants, h_to_v, v_to_h):
     possible_haplotypes = set()
-    for variant in variants:
+    for variant in tqdm(variants, total=len(variants), desc="Finding haplotypes"):
         for haplotype in v_to_h.get(variant, []):
             possible_haplotypes.add(haplotype)
     variants = set(variants)
