@@ -37,8 +37,9 @@ def get_gwas_html(rs):
     return res
 
 
-def get_gwas_traits():
-    df = pd.read_csv("gwas_associations.tsv", sep="\t")
+def get_gwas_traits(data_dir):
+    filename = os.path.join(data_dir, GWAS_ASSOCIATIONS_FILENAME)
+    df = pd.read_csv(filename, sep="\t")
     df.rename(columns={x: x.replace(" ", "_").replace("/", "_").replace("(", "").replace(")", "").replace("-", "_")
               .replace("95%", "p").replace("[", "").replace("]", "")
                        for x in df.columns}, inplace=True)
@@ -67,9 +68,11 @@ def get_gwas_traits():
     return res
 
 
-def initialize_gwas(force=False):
-    if not os.path.exists(GWAS_ASSOCIATIONS_FILENAME) or force:
+def initialize_gwas(force=False, data_dir="data/"):
+    filename = os.path.join(data_dir, GWAS_ASSOCIATIONS_FILENAME)
+    print(filename)
+    if not os.path.exists(filename) or force:
         with tqdm(unit='B', unit_scale=True, leave=True, miniters=1,
                   desc="Downloading GWAS") as t:
             urllib.request.urlretrieve("https://www.ebi.ac.uk/gwas/api/search/downloads/alternative",
-                                       GWAS_ASSOCIATIONS_FILENAME, my_hook(t))
+                                       filename, my_hook(t))

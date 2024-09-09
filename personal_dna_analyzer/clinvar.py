@@ -19,8 +19,9 @@ CLINVAR_VARIANTS_TSV = "clinvar_variants.tsv"
 CLINVAR_XML = "ClinVarVCVRelease_00-latest.xml.gz"
 
 
-def get_clinvar_rs_pathologies(pathology_mapping):
-    df = pd.read_csv(CLINVAR_PATHOLOGIES_TSV, sep="\t")
+def get_clinvar_rs_pathologies(pathology_mapping, data_dir):
+    filename = os.path.join(data_dir, CLINVAR_PATHOLOGIES_TSV)
+    df = pd.read_csv(filename, sep="\t")
     pathologies = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading ClinVar pathologies"):
         if pd.isna(row.rs_id):
@@ -66,8 +67,9 @@ def get_variants_mapping():
     return variants
 
 
-def get_clinvar_variant_pathologies():
-    df = pd.read_csv(CLINVAR_PATHOLOGIES_TSV, sep="\t")
+def get_clinvar_variant_pathologies(data_dir):
+    filename = os.path.join(data_dir, CLINVAR_PATHOLOGIES_TSV)
+    df = pd.read_csv(filename, sep="\t")
     res = dict()
     for row in df.itertuples():
         id = row.variation_id
@@ -78,8 +80,9 @@ def get_clinvar_variant_pathologies():
     return res
 
 
-def get_clinvar_variants(pathology_mapping):
-    df = pd.read_csv(CLINVAR_VARIANTS_TSV, sep="\t")
+def get_clinvar_variants(pathology_mapping, data_dir):
+    filename = os.path.join(data_dir, CLINVAR_VARIANTS_TSV)
+    df = pd.read_csv(filename, sep="\t")
     df = df[df['variation_type'].isin(["single nucleotide variant", "Haplotype"])]
     # All possible types: Complex, CompoundHeterozygote, copy number gain, copy number loss, Deletion, Diplotype,
     # Distinct chromosomes, Duplication, fusion, Haplotype, 'Haplotype, single variant', Indel, Insertion,
@@ -115,8 +118,9 @@ def get_phenotype_medgen_ids(row):
     return values
 
 
-def get_haplotypes():
-    df = pd.read_csv("clinvar_haplotypes.tsv", sep="\t")
+def get_haplotypes(data_dir):
+    filename = os.path.join(data_dir, HAPLOTYPES_TSV)
+    df = pd.read_csv(filename, sep="\t")
     h_to_v = dict()
     v_to_h = dict()
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading haplotypes"):
@@ -163,8 +167,9 @@ def get_clinvar_variant_from_rs(rs_full, mapping):
     return res_var, res_pathos
 
 
-def get_tree_xml():
-    xml_file = gzip.open('ClinVarVCVRelease_00-latest.xml.gz', 'r')
+def get_tree_xml(data_dir):
+    filename = os.path.join(data_dir, CLINVAR_XML)
+    xml_file = gzip.open(filename, 'r')
     root = dict()
     current = root
     previous = []
@@ -231,17 +236,21 @@ def get_variation(variation):
         json.dump(rows, f)
 
 
-def process_clinvar_release():
-    xml_file = gzip.open('ClinVarVCVRelease_00-latest.xml.gz', 'r')
+def process_clinvar_release(data_dir):
+    filename_xml = os.path.join(data_dir, CLINVAR_XML)
+    filename_tsv = os.path.join(data_dir, CLINVAR_VARIANTS_TSV)
+    filename_pathologies = os.path.join(data_dir, CLINVAR_PATHOLOGIES_TSV)
+    filename_haplotypes = os.path.join(data_dir, HAPLOTYPES_TSV)
+    xml_file = gzip.open(filename_xml, 'r')
     rows = dict()
     current = rows
     previous = []
-    variation_file = open(CLINVAR_VARIANTS_TSV, "w")
+    variation_file = open(filename_tsv, "w")
     variation_file.write("\t".join(("variation_id", "variation_name", "variation_type", "rs_id", "allele")) + "\n")
-    pathology_file = open(CLINVAR_PATHOLOGIES_TSV, "w")
+    pathology_file = open(filename_pathologies, "w")
     pathology_file.write("\t".join(("variation_id", "rs_id", "name", "condition_id",
                                     "status", "is_pathogenic", "n_submissions")) + "\n")
-    haplotype_file = open(HAPLOTYPES_TSV, "w")
+    haplotype_file = open(filename_haplotypes, "w")
     haplotype_file.write("variation_id" + "\t" + "variants" + "\n")
     counter = 0
     for event, row in tqdm(iterparse(xml_file, events=("start", "end",)), total=1077308286):
@@ -369,14 +378,16 @@ def print_pathologies_html(pathos):
     return "".join(res)
 
 
-def initialize_clinvar(force=False):
+def initialize_clinvar(force=False, data_dir="data/"):
     url = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/xml/ClinVarVCVRelease_00-latest.xml.gz"
-    if not os.path.exists(CLINVAR_XML) or force:
+    filename = os.path.join(data_dir, CLINVAR_XML)
+    filename_tsv = os.path.join(data_dir, CLINVAR_VARIANTS_TSV)
+    if (not os.path.exists(filename) and not os.path.exists(filename_tsv)) or force:
         with tqdm(unit='B', unit_scale=True, leave=True, miniters=1,
                   desc="Downloading ClinVar") as t:
-            urllib.request.urlretrieve(url, CLINVAR_XML, my_hook(t))
-    if not os.path.exists(CLINVAR_VARIANTS_TSV) or force:
-        process_clinvar_release()
+            urllib.request.urlretrieve(url, filename, my_hook(t))
+    if not os.path.exists(filename_tsv) or force:
+        process_clinvar_release(data_dir)
 
 
 Pathology = namedtuple("Pathology", ["condition_id", "name", "is_pathogenic",

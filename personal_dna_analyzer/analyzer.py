@@ -237,22 +237,22 @@ def score_summary_entry(entry):
         n_pathogenic / 5.0 + min((n_variant_pathologies - n_pathogenic), 10) / 20.0
 
 
-def initialize_all(force=False):
-    initialize_gwas(force)
-    initialize_snpedia(force)
-    initialize_clinvar(force)
+def initialize_all(force=False, data_dir="data/"):
+    initialize_gwas(force, data_dir)
+    initialize_snpedia(force, data_dir)
+    initialize_clinvar(force, data_dir)
 
 
-def main(input_filename, output_filename, force_reload=False):
-    initialize_all(force=force_reload)
+def main(input_filename, output_filename, force_reload=False, data_dir="data/"):
+    initialize_all(force=force_reload, data_dir=data_dir)
     dna = auto_load_dna(input_filename)
-    genotypes = load_genotypes()
-    snps = load_snps()
-    gwas_traits = get_gwas_traits()
-    pathology_mapping = get_clinvar_variant_pathologies()
-    rs_pathologies = get_clinvar_rs_pathologies(pathology_mapping)
-    variants_mapping = get_clinvar_variants(pathology_mapping)
-    haplotypes = get_haplotypes()
+    genotypes = load_genotypes(data_dir)
+    snps = load_snps(data_dir)
+    gwas_traits = get_gwas_traits(data_dir)
+    pathology_mapping = get_clinvar_variant_pathologies(data_dir)
+    rs_pathologies = get_clinvar_rs_pathologies(pathology_mapping, data_dir)
+    variants_mapping = get_clinvar_variants(pathology_mapping, data_dir)
+    haplotypes = get_haplotypes(data_dir)
     all_rss = get_summaries_dict(dna, genotypes, snps, rs_pathologies, variants_mapping, gwas_traits, haplotypes,
                                  pathology_mapping)
     html = get_html_page(all_rss)
@@ -261,7 +261,7 @@ def main(input_filename, output_filename, force_reload=False):
     print("Report written to " + output_filename)
 
 
-if __name__ == '__main__':
+def get_arguments():
     parser = argparse.ArgumentParser(
         prog="Personal DNA Analyzer",
         description="This program analyzes your DNA to find interesting insights. Do not use for medical advice and"
@@ -273,5 +273,11 @@ if __name__ == '__main__':
                         help="Output html file.")
     parser.add_argument("-f", "--force_reload", action="store_true",
                         help="Force reload all data sources (time consuming)")
-    args = parser.parse_args()
-    main(args.input, args.output, args.force_reload)
+    parser.add_argument("-d", "--data_dir", default="data/",
+                        help="Directory where data files are located.")
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    args = get_arguments()
+    main(args.input, args.output, args.force_reload, args.data_dir)

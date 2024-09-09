@@ -13,13 +13,10 @@ from personal_dna_analyzer.dna_parsers import get_full_genotype
 FILE_SNPS = 'snps.json'
 FILE_GENOTYPES = "genotypes.json"
 FILE_MEDICAL_CONDITIONS = "medical_conditions.json"
-DATA_GENOTYPES_HTML = pickledb.load('data_genotypes.db', False)
-DATA_GENOTYPES_WIKITEXT = pickledb.load('data_wikitext_genotypes.db', False)
+DATA_GENOTYPES_HTML = None
+DATA_GENOTYPES_WIKITEXT = None
+DATA_GENOTYPES = None
 USE_WIKITEXT = True
-if USE_WIKITEXT:
-    DATA_GENOTYPES = DATA_GENOTYPES_WIKITEXT
-else:
-    DATA_GENOTYPES = DATA_GENOTYPES_HTML
 
 URL_ENDPOINT = "https://bots.snpedia.com/api.php"
 REGEX_PMID = re.compile(r"\[PMID (?P<id>\d*)\]")
@@ -67,31 +64,38 @@ def get_medical_conditions_names():
     return get_all_category("Is_a_medical_condition")
 
 
-def save_snps(force=False):
-    if not os.path.exists(FILE_SNPS) or force:
-        json.dump(get_snp_names(), open(FILE_SNPS, 'w'))
+def save_snps(force=False, data_dir="data/"):
+    filename = os.path.join(data_dir, FILE_SNPS)
+    if not os.path.exists(filename) or force:
+        json.dump(get_snp_names(), open(filename, 'w'))
 
 
-def load_snps():
-    return json.load(open(FILE_SNPS))
+def load_snps(data_dir):
+    filename = os.path.join(data_dir, FILE_SNPS)
+    return json.load(open(filename))
 
 
-def save_genotypes(force=False):
-    if not os.path.exists(FILE_GENOTYPES) or force:
-        json.dump(get_genotypes_names(), open(FILE_GENOTYPES, 'w'))
+def save_genotypes(force=False, data_dir="data/"):
+    filename = os.path.join(data_dir, FILE_GENOTYPES)
+    print(filename)
+    if not os.path.exists(filename) or force:
+        json.dump(get_genotypes_names(), open(filename, 'w'))
 
 
-def load_genotypes():
-    return json.load(open(FILE_GENOTYPES))
+def load_genotypes(data_dir):
+    filename = os.path.join(data_dir, FILE_GENOTYPES)
+    return json.load(open(filename))
 
 
-def save_medical_conditions(force=False):
-    if not os.path.exists(FILE_MEDICAL_CONDITIONS) or force:
-        json.dump(get_medical_conditions_names(), open(FILE_MEDICAL_CONDITIONS, 'w'))
+def save_medical_conditions(force=False, data_dir="data/"):
+    filename = os.path.join(data_dir, FILE_MEDICAL_CONDITIONS)
+    if not os.path.exists(filename) or force:
+        json.dump(get_medical_conditions_names(), open(filename, 'w'))
 
 
-def load_medical_conditions():
-    return json.load(open(FILE_MEDICAL_CONDITIONS))
+def load_medical_conditions(data_dir):
+    filename = os.path.join(data_dir, FILE_MEDICAL_CONDITIONS)
+    return json.load(open(filename))
 
 
 def get_wikitexts(pages):
@@ -309,10 +313,17 @@ def set_snpedia_info(info, res_dict):
             res_dict["was_on_snpedia"] = len(info) != 0
 
 
-def download_all_html():
-    genotypes = load_genotypes()
+def download_all(data_dir):
+    genotypes = load_genotypes(data_dir) + load_snps(data_dir)
     genotypes = [x for x in genotypes if x.startswith("Rs")]
-    download_genotypes_html(genotypes)
+    if USE_WIKITEXT:
+        try:
+            download_genotypes_wikitext(genotypes)
+        except:
+            DATA_GENOTYPES_WIKITEXT.dump()
+            raise
+    else:
+        download_genotypes_html(genotypes)
 
 
 def download_genotypes_html(genotypes):
@@ -339,10 +350,19 @@ def download_genotypes_wikitext(genotypes):
                         desc="Predownloading relevant pages"):
         for key, value in get_wikitexts(genotypes[counter * 100:(counter + 1) * 100]).items():
             DATA_GENOTYPES_WIKITEXT.set(key, value)
-        DATA_GENOTYPES_WIKITEXT.dump()
+        if counter % 50 == 49:
+            try:
+                DATA_GENOTYPES_WIKITEXT.dump()
+            except KeyboardInterrupt:
+                DATA_GENOTYPES_WIKITEXT.dump()
+                raise
     for key, value in get_wikitexts(genotypes[(counter + 1) * 100:]).items():
         DATA_GENOTYPES_WIKITEXT.set(key, value)
-    DATA_GENOTYPES_WIKITEXT.dump()
+    try:
+        DATA_GENOTYPES_WIKITEXT.dump()
+    except KeyboardInterrupt:
+        DATA_GENOTYPES_WIKITEXT.dump()
+        raise
 
 
 def get_all_snpedia_entities(dna, genotypes, snps):
@@ -388,11 +408,20 @@ def get_snpedia_link(text):
     return "None"
 
 
-def initialize_snpedia(force=False):
-    save_genotypes(force)
-    save_snps(force)
-    save_medical_conditions(force)
+def initialize_snpedia(force=False, data_dir="data/"):
+    global DATA_GENOTYPES_HTML, DATA_GENOTYPES_WIKITEXT, USE_WIKITEXT, DATA_GENOTYPES
+    save_genotypes(force, data_dir)
+    save_snps(force, data_dir)
+    save_medical_conditions(force, data_dir)
+    DATA_GENOTYPES_HTML = pickledb.load(os.path.join(data_dir, 'data_genotypes.db'), False)
+    DATA_GENOTYPES_WIKITEXT = pickledb.load(os.path.join(data_dir, 'data_wikitext_genotypes.db'), False)
+    USE_WIKITEXT = True
+    if USE_WIKITEXT:
+        DATA_GENOTYPES = DATA_GENOTYPES_WIKITEXT
+    else:
+        DATA_GENOTYPES = DATA_GENOTYPES_HTML
 
 
 if __name__ == '__main__':
-    download_all_html()
+    initialize_snpedia(data_dir="data/")
+    download_all("data/")
