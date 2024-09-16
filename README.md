@@ -8,6 +8,40 @@ send our data to unknown companies.
 
 ## How to run the program
 
+Before anything, you need to download this project locally, either with Git or
+directly using the download button on the GitHub page.
+
+### With Docker
+
+You can run the project with Docker. First, install Docker following
+the instructions on the [official website](https://docs.docker.com/engine/install/).
+Then, you can optionally download the data folder provided on the release page of
+our GitHub project. You must place this folder in the personal_dna_analyzer folder
+(personal_dna_analyzer/data). Then run at the root of the project:
+
+```bash
+docker build --tag dna_analyzer .
+```
+
+and
+
+```bash
+docker run dna_analyzer
+```
+
+If everything went smoothly, you should see a URL appear in the log that looks like:
+
+```
+Running on http://172.17.0.3:5000
+```
+
+Open your browser and go to the mentioned URL (http://172.17.0.3:5000 here). On
+this page, you have to upload your DNA results (this website is on your machine,
+so your data is not sent to anybody). After clicking on the upload button, wait a
+few minutes and your results will appear!
+
+### With Python
+
 To run the program, you need to have Python installed and a package installer like pip.
 
 To install the dependencies, run the command (we recommend using a virtual environment):

@@ -243,8 +243,9 @@ def initialize_all(force=False, data_dir="data/"):
     initialize_clinvar(force, data_dir)
 
 
-def main(input_filename, output_filename, force_reload=False, data_dir="data/"):
-    initialize_all(force=force_reload, data_dir=data_dir)
+def main(input_filename, output_filename, force_reload=False, data_dir="data/", initialize=False):
+    if initialize:
+        initialize_all(force=force_reload, data_dir=data_dir)
     dna = auto_load_dna(input_filename)
     genotypes = load_genotypes(data_dir)
     snps = load_snps(data_dir)
