@@ -1,4 +1,10 @@
-# Personal DNA Analyzer
+# LocalHelix - Your Personal DNA Analyzer
+
+
+>In a small village not so far away, all the Gauls shared their data with Roman companies... All except one! 💪
+Meet **LocalHelix**, the brave software powered by privacy potion, keeping your DNA safe from the prying eyes of
+Rome’s data-mining legionaries. 🛡️ Unlike Cacofonix, it won’t share your secrets with anyone! 😉
+`
 
 This program analyzes your DNA to find interesting insights.
 **Do not use for medical advice and always consult your doctor**.
