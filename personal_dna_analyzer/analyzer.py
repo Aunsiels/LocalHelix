@@ -171,7 +171,9 @@ def rs_to_html(rs):
                rs["Repute"] + \
                "<br>" + \
                "<b>SNPedia Variant</b>: " + get_snpedia_link(rs["rs"]) + "<br>" + \
-               "<b>SNPedia Base SNP</b>: " + get_snpedia_link(rs["rs"].split("(")[0]) + "<br>"
+               "<b>SNPedia Base SNP</b>: " + get_snpedia_link(rs["rs"].split("(")[0]) + "<br>" + \
+               "<b>OpenSNP Link</b>: <a href=\"https://opensnp.org/snps/" + rs["rs"].split("(")[0] + "\">" + \
+               rs["rs"].split("(")[0] + "</a><br>"
     for var_link, clinvar_var_pathos in zip(var_links, clinvar_variant_pathologies):
         content += ("<span title=\"ClinVar page of your variant\"><b>ClinVar "
                     "Variant</b></span>: ") + \
@@ -243,7 +245,7 @@ def initialize_all(force=False, data_dir="data/"):
     initialize_clinvar(force, data_dir)
 
 
-def main(input_filename, output_filename, force_reload=False, data_dir="data/", initialize=False):
+def main(input_filename, output_filename, force_reload=False, data_dir="data/", initialize=True):
     if initialize:
         initialize_all(force=force_reload, data_dir=data_dir)
     dna = auto_load_dna(input_filename)
