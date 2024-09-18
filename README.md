@@ -22,8 +22,8 @@ directly using the download button on the GitHub page.
 You can run the project with Docker. First, install Docker following
 the instructions on the [official website](https://docs.docker.com/engine/install/).
 Then, you can optionally download the data folder provided on the release page of
-our GitHub project. You must place this folder in the personal_dna_analyzer folder
-(personal_dna_analyzer/data). Then run at the root of the project:
+our GitHub project. You must place this folder in the localhelix folder
+(localhelix/data). Then run at the root of the project:
 
 ```bash
 docker build --tag dna_analyzer .
@@ -59,7 +59,7 @@ pip install -r requirements.txt
 Then, run the command:
 
 ```bash
-python -m personal_dna_analyzer -i INPUT_FILE -o OUTPUT_FILE -d DATA_DIR
+python -m localhelix -i INPUT_FILE -o OUTPUT_FILE -d DATA_DIR
 ```
 
 The input file is an SNP description file. The supported formats are 23andMe,

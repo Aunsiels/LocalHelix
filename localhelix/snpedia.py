@@ -8,7 +8,7 @@ import pickledb
 from tqdm import tqdm
 import wikitextparser as wtp
 
-from personal_dna_analyzer.dna_parsers import get_full_genotype
+from localhelix.dna_parsers import get_full_genotype
 
 FILE_SNPS = 'snps.json'
 FILE_GENOTYPES = "genotypes.json"

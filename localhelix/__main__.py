@@ -1,4 +1,4 @@
-from personal_dna_analyzer.analyzer import main, get_arguments
+from localhelix.analyzer import main, get_arguments
 
 if __name__ == '__main__':
     args = get_arguments()

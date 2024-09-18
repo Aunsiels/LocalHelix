@@ -4,13 +4,13 @@ import os
 from flask import Flask, flash, request, redirect, url_for
 from werkzeug.utils import secure_filename
 
-from personal_dna_analyzer.analyzer import main, initialize_all
+from localhelix.analyzer import main, initialize_all, create_page_from_body
 
 UPLOAD_FOLDER = '/path/to/the/uploads'
 ALLOWED_EXTENSIONS = {'txt', 'csv', 'tsv'}
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = "personal_dna_analyzer/data/"
+app.config['UPLOAD_FOLDER'] = "localhelix/data/"
 
 
 initialize_all(False, app.config['UPLOAD_FOLDER'])
@@ -42,13 +42,25 @@ def upload_file():
             main(input_file, output_file, False, app.config['UPLOAD_FOLDER'], False)
             with open(output_file, 'r') as f:
                 return f.read()
-    return '''
-    <!doctype html>
-    <title>Upload your DNA file</title>
-    <h1>Upload your DNA file to generate the report</h1>
+    content = """
+    <center>
     <p>Note that this process can take several minutes.</p>
     <form method=post enctype=multipart/form-data>
       <input type=file name=file>
       <input type=submit value=Upload>
     </form>
-    '''
+    </center>
+    """
+    body = """<div class="container-fluid p-5 bg-primary text-white text-center"> <h1>LocalHelix - Your Personal DNA 
+        Analyzer</h1> <p>Upload your DNA file to generate the report</p> <form action="https://www.paypal.com/donate" method="post" 
+        target="_top"> <input type="hidden" name="hosted_button_id" value="GR3D64Y7S7TU2" /> <input type="image" 
+        src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif" border="0" name="submit" title="PayPal - 
+        The safer, easier way to pay online!" alt="Donate with PayPal button" /> <img alt="" border="0" 
+        src="https://www.paypal.com/en_FR/i/scr/pixel.gif" width="1" height="1" /> </form>
+
+        </div>
+          
+        <div class="container mt-5">
+        """ + content + """  
+        </div>"""
+    return create_page_from_body(body)

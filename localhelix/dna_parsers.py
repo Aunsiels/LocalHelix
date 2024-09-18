@@ -1,7 +1,7 @@
 import pandas as pd
 from tqdm import tqdm
 
-from personal_dna_analyzer.utils import get_complement
+from localhelix.utils import get_complement
 
 
 def read_my_heritage(path):

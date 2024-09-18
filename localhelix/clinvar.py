@@ -8,7 +8,7 @@ import urllib.request
 import pandas as pd
 from tqdm import tqdm
 
-from personal_dna_analyzer.utils import my_hook, BASES
+from localhelix.utils import my_hook, BASES
 
 HAPLOTYPES_TSV = "clinvar_haplotypes.tsv"
 

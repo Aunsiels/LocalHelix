@@ -4,11 +4,11 @@ from collections import Counter
 import pandas as pd
 from tqdm import tqdm
 
-from personal_dna_analyzer.dna_parsers import auto_load_dna
-from personal_dna_analyzer.gwas import get_gwas_html, get_gwas_traits, initialize_gwas
-from personal_dna_analyzer.snpedia import get_all_snpedia_match_genotypes, load_genotypes, initialize_snpedia, \
+from localhelix.dna_parsers import auto_load_dna
+from localhelix.gwas import get_gwas_html, get_gwas_traits, initialize_gwas
+from localhelix.snpedia import get_all_snpedia_match_genotypes, load_genotypes, initialize_snpedia, \
     get_snpedia_link, load_snps, set_snpedia_info
-from personal_dna_analyzer.clinvar import get_clinvar_variant_from_rs, get_clinvar_variant_pathologies, \
+from localhelix.clinvar import get_clinvar_variant_from_rs, get_clinvar_variant_pathologies, \
     get_clinvar_rs_pathologies, get_clinvar_variants, print_pathologies_html, initialize_clinvar, get_clinvar_var_link, \
     get_haplotypes, find_all_haplotypes
 
@@ -193,21 +193,9 @@ def rs_to_html(rs):
 def get_html_page(all_rss):
     cards = [rs_to_html(rs) for rs in all_rss]
     content = summaries_results_in_html(all_rss) + "<h2>All variants</h2>" + "<br>".join(cards)
-    html = """
-    <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <title>DNA Analyser</title>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-          <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-        </head>
-        <body>
-        
-        <div class="container-fluid p-5 bg-primary text-white text-center"> <h1>DNA Analyser</h1> <p>Your results are 
-        ready!</p> <form action="https://www.paypal.com/donate" method="post" target="_top"> <input type="hidden" 
-        name="hosted_button_id" value="GR3D64Y7S7TU2" /> <input type="image" 
+    body = """<div class="container-fluid p-5 bg-primary text-white text-center"> <h1>LocalHelix - Your Personal DNA 
+        Analyzer</h1> <p>Your results are ready!</p> <form action="https://www.paypal.com/donate" method="post" 
+        target="_top"> <input type="hidden" name="hosted_button_id" value="GR3D64Y7S7TU2" /> <input type="image" 
         src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif" border="0" name="submit" title="PayPal - 
         The safer, easier way to pay online!" alt="Donate with PayPal button" /> <img alt="" border="0" 
         src="https://www.paypal.com/en_FR/i/scr/pixel.gif" width="1" height="1" /> </form>
@@ -216,11 +204,28 @@ def get_html_page(all_rss):
           
         <div class="container mt-5">
         """ + content + """  
-        </div>
-        
-        </body>
-        </html>
-    """
+        </div>"""
+    html = create_page_from_body(body)
+    return html
+
+
+def create_page_from_body(body):
+    html = """
+    <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <title>LocalHelix - Your Personal DNA Analyzer</title>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+          <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        </head>
+        <body>
+        """ + body + \
+           """
+           </body>
+           </html>
+       """
     return html
 
 
@@ -266,7 +271,7 @@ def main(input_filename, output_filename, force_reload=False, data_dir="data/", 
 
 def get_arguments():
     parser = argparse.ArgumentParser(
-        prog="Personal DNA Analyzer",
+        prog="LocalHelix - Your Personal DNA Analyzer",
         description="This program analyzes your DNA to find interesting insights. Do not use for medical advice and"
                     "always consult your doctor."
     )

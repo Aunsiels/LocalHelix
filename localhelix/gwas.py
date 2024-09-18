@@ -5,7 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 import urllib.request
 
-from personal_dna_analyzer.utils import my_hook
+from localhelix.utils import my_hook
 
 GWAS_ASSOCIATIONS_FILENAME = "gwas_associations.tsv"
 
