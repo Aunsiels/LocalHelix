@@ -9,10 +9,12 @@ from tqdm import tqdm
 import wikitextparser as wtp
 
 from localhelix.dna_parsers import get_full_genotype
+from localhelix.formula_tree import Node
 
 FILE_SNPS = 'snps.json'
 FILE_GENOTYPES = "genotypes.json"
 FILE_MEDICAL_CONDITIONS = "medical_conditions.json"
+FILE_GENOSETS = "genosets.json"
 DATA_GENOTYPES_HTML = None
 DATA_GENOTYPES_WIKITEXT = None
 DATA_GENOTYPES = None
@@ -64,6 +66,10 @@ def get_medical_conditions_names():
     return get_all_category("Is_a_medical_condition")
 
 
+def get_all_genosets():
+    return get_all_category("Is_a_genoset")
+
+
 def save_snps(force=False, data_dir="data/"):
     filename = os.path.join(data_dir, FILE_SNPS)
     if not os.path.exists(filename) or force:
@@ -72,6 +78,17 @@ def save_snps(force=False, data_dir="data/"):
 
 def load_snps(data_dir):
     filename = os.path.join(data_dir, FILE_SNPS)
+    return json.load(open(filename))
+
+
+def save_genosets(force=False, data_dir="data/"):
+    filename = os.path.join(data_dir, FILE_GENOSETS)
+    if not os.path.exists(filename) or force:
+        json.dump(get_all_genosets(), open(filename, 'w'))
+
+
+def load_genosets(data_dir):
+    filename = os.path.join(data_dir, FILE_GENOSETS)
     return json.load(open(filename))
 
 
@@ -299,10 +316,17 @@ def set_snpedia_info(info, res_dict):
         res_dict["was_on_snpedia"] = len(info) != 0
     else:
         genotype = info.get("Genotype", dict())
+        genoset = info.get("Genoset", [])
         if genotype:
             res_dict["Magnitude"] = str(genotype[0].get("magnitude", "Unknown"))
             res_dict["Repute"] = str(genotype[0].get("repute", "Unknown"))
             res_dict["summary"] = str(genotype[0].get("summary", ""))
+            res_dict["text"] = info.get("html", "")
+            res_dict["was_on_snpedia"] = len(info) != 0
+        elif genoset:
+            res_dict["Magnitude"] = str(genoset[0].get("Magnitude", "Unknown"))
+            res_dict["Repute"] = str(genoset[0].get("Repute", "Unknown"))
+            res_dict["summary"] = str(genoset[0].get("Summary", ""))
             res_dict["text"] = info.get("html", "")
             res_dict["was_on_snpedia"] = len(info) != 0
         else:
@@ -313,9 +337,14 @@ def set_snpedia_info(info, res_dict):
             res_dict["was_on_snpedia"] = len(info) != 0
 
 
-def download_all(data_dir):
-    genotypes = load_genotypes(data_dir) + load_snps(data_dir)
-    genotypes = [x for x in genotypes if x.startswith("Rs")]
+def download_all(data_dir, only_genosets=False):
+    if not only_genosets:
+        genotypes = load_genotypes(data_dir) + load_snps(data_dir)
+    else:
+        genotypes = []
+    genotypes += load_genosets(data_dir) + \
+        [x + "/criteria" for x in load_genosets(data_dir)]
+    genotypes = [x for x in genotypes if x.startswith("Rs") or x.startswith("Gs")]
     if USE_WIKITEXT:
         try:
             download_genotypes_wikitext(genotypes)
@@ -346,6 +375,8 @@ def download_genotypes_html(genotypes):
 def download_genotypes_wikitext(genotypes):
     counter = 0
     genotypes = [genotype for genotype in genotypes if not DATA_GENOTYPES_WIKITEXT.exists(genotype)]
+    if not genotypes:
+        return
     for counter in tqdm(range(len(genotypes) // 100), total=len(genotypes) // 100,
                         desc="Predownloading relevant pages"):
         for key, value in get_wikitexts(genotypes[counter * 100:(counter + 1) * 100]).items():
@@ -382,10 +413,12 @@ def get_all_snpedia_entities(dna, genotypes, snps):
     return list(res)
 
 
-def get_all_snpedia_match_genotypes(dna, genotypes, snps):
+def get_all_snpedia_match_genotypes(dna, genotypes, snps, genosets):
     if USE_WIKITEXT:
         download_genotypes_wikitext(get_all_snpedia_entities(dna, genotypes, snps))
     known_genotypes, remaining = separate_snpedia_variants(dna, genotypes, snps)
+    identified_genosets = identify_genosets(genosets, [x[0] for x in known_genotypes])
+    known_genotypes = list(known_genotypes) + [(x, x) for x in identified_genosets]
     res = {}
     counter = 0
     for genotype in tqdm(known_genotypes, desc="Gathering SNPedia information"):
@@ -402,7 +435,7 @@ def get_all_snpedia_match_genotypes(dna, genotypes, snps):
 
 
 def get_snpedia_link(text):
-    if text and text.lower().startswith("rs"):
+    if text and (text.lower().startswith("rs") or text.lower().startswith("gs")):
         return "<a  class=\"link-dark\" href=\"https://www.snpedia.com/index.php/" + text + \
             "\">" + text + "</a>"
     return "None"
@@ -413,6 +446,7 @@ def initialize_snpedia(force=False, data_dir="data/"):
     save_genotypes(force, data_dir)
     save_snps(force, data_dir)
     save_medical_conditions(force, data_dir)
+    save_genosets(force, data_dir)
     DATA_GENOTYPES_HTML = pickledb.load(os.path.join(data_dir, 'data_genotypes.db'), False)
     DATA_GENOTYPES_WIKITEXT = pickledb.load(os.path.join(data_dir, 'data_wikitext_genotypes.db'), False)
     USE_WIKITEXT = True
@@ -420,6 +454,45 @@ def initialize_snpedia(force=False, data_dir="data/"):
         DATA_GENOTYPES = DATA_GENOTYPES_WIKITEXT
     else:
         DATA_GENOTYPES = DATA_GENOTYPES_HTML
+    download_all(data_dir, only_genosets=True)
+
+
+def process_criteria(genoset_data):
+    if genoset_data[0]["from"] != "wikitext":
+        raise NotImplementedError
+    soup = BeautifulSoup(genoset_data[0]["html"].replace("<br>", "\n"), 'html.parser')
+    text = soup.text
+    formula = ""
+    for line in text.split("\n"):
+        line = line.strip()
+        if line.startswith("#"):
+            continue
+        elif line:
+            formula += line
+    tree = Node.read_formula(formula)
+    return tree
+
+
+def identify_genosets(genosets, all_genotypes):
+    preprocessed = []
+    for genoset in genosets:
+        html = get_info_genotype(genoset + "/criteria", autodump=False)
+        criteria = process_criteria(html)
+        preprocessed.append((genoset, criteria))
+    all_genotypes = {genotype.replace("Rs", "rs") for genotype in all_genotypes}
+    modified = True
+    res = set()
+    while modified:
+        modified = False
+        for genoset, criteria in preprocessed:
+            if genoset in res:
+                continue
+            found = criteria.check_genoset(all_genotypes)
+            if found:
+                modified = True
+                all_genotypes.add(genoset.replace("Gs", "gs"))
+                res.add(genoset)
+    return res
 
 
 if __name__ == '__main__':

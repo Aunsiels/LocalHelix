@@ -7,35 +7,33 @@ from tqdm import tqdm
 from localhelix.dna_parsers import auto_load_dna
 from localhelix.gwas import get_gwas_html, get_gwas_traits, initialize_gwas
 from localhelix.snpedia import get_all_snpedia_match_genotypes, load_genotypes, initialize_snpedia, \
-    get_snpedia_link, load_snps, set_snpedia_info
+    get_snpedia_link, load_snps, set_snpedia_info, load_genosets
 from localhelix.clinvar import get_clinvar_variant_from_rs, get_clinvar_variant_pathologies, \
     get_clinvar_rs_pathologies, get_clinvar_variants, print_pathologies_html, initialize_clinvar, get_clinvar_var_link, \
     get_haplotypes, find_all_haplotypes
 
 
-def get_summaries_dict(dna, genotypes, snps, pathologies, variants_mapping, gwas_traits, haplotypes, var_to_pathology):
-    genotype_infos = get_all_snpedia_match_genotypes(dna, genotypes, snps)
+def get_summaries_dict(dna, genotypes, snps, pathologies, variants_mapping, gwas_traits, haplotypes, var_to_pathology,
+                       genosets):
+    genotype_infos = get_all_snpedia_match_genotypes(dna, genotypes, snps, genosets)
     res = []
     all_clinvar_variants = []
-    for key, value in tqdm(sorted(genotype_infos.items(),
-                                  key=lambda x: -(
-                                          float(x[1].get("Magnitude", 1)) + len(x[1].get("summary", "")) / 1000.0)),
+    for key, value in tqdm(genotype_infos.items(),
                            total=len(genotype_infos), desc="Generating report"):
-        base_rs = key.split("(")[0].lower()
-        al1, al2 = key.split("(")[1].replace(")", "").split(";")
-        variant_list, pathos_list = get_clinvar_variant_from_rs(key, variants_mapping)
-        for variant in variant_list:
-            all_clinvar_variants.append(variant)
-        all_pathologies = list(sorted(pathologies.get(base_rs, []), key=lambda x: x.name.lower()))
         variant_pathologies_list = []
         variant_pathology_names = set()
-        for pathos in pathos_list:
-            variant_pathologies_list.append(list(sorted(pathos, key=lambda x: x.name.lower())))
-            variant_pathology_names.update({x.name for x in variant_pathologies_list[-1]})
-        all_pathologies = [x for x in all_pathologies if x.name not in variant_pathology_names]
-        if not value and not all_pathologies and all(len(x) == 0 for x in variant_pathologies_list) and \
-                (base_rs, al1) not in gwas_traits and (base_rs, al2) not in gwas_traits:
-            continue
+        all_pathologies = []
+        variant_list = []
+        if key.lower().startswith("rs"):
+            base_rs = key.split("(")[0].lower()
+            variant_list, pathos_list = get_clinvar_variant_from_rs(key, variants_mapping)
+            for variant in variant_list:
+                all_clinvar_variants.append(variant)
+            all_pathologies = list(sorted(pathologies.get(base_rs, []), key=lambda x: x.name.lower()))
+            for pathos in pathos_list:
+                variant_pathologies_list.append(list(sorted(pathos, key=lambda x: x.name.lower())))
+                variant_pathology_names.update({x.name for x in variant_pathologies_list[-1]})
+            all_pathologies = [x for x in all_pathologies if x.name not in variant_pathology_names]
         temp = dict()
         temp["rs"] = key
         set_snpedia_info(value, temp)
@@ -43,10 +41,13 @@ def get_summaries_dict(dna, genotypes, snps, pathologies, variants_mapping, gwas
         temp["ClinVarVariants"] = variant_list
         temp["ClinVarVariantPathologies"] = variant_pathologies_list
         temp["GWAS"] = dict()
-        if (base_rs, al1) in gwas_traits:
-            temp["GWAS"][al1] = gwas_traits[(base_rs, al1)]
-        if (base_rs, al2) in gwas_traits:
-            temp["GWAS"][al2] = gwas_traits[(base_rs, al2)]
+        if key.lower().startswith("rs"):
+            base_rs = key.split("(")[0].lower()
+            al1, al2 = key.split("(")[1].replace(")", "").split(";")
+            if (base_rs, al1) in gwas_traits:
+                temp["GWAS"][al1] = gwas_traits[(base_rs, al1)]
+            if (base_rs, al2) in gwas_traits:
+                temp["GWAS"][al2] = gwas_traits[(base_rs, al2)]
         res.append(temp)
     h_to_v, v_to_h = haplotypes
     found_haplotypes = find_all_haplotypes(all_clinvar_variants, h_to_v, v_to_h)
@@ -169,11 +170,14 @@ def rs_to_html(rs):
         <br> <span title=\"Importance annotated by SNPedia community\"><b>Magnitude</b></span>: """ + rs["Magnitude"] + \
                ", <span title=\"Good or bad SNP, annotaed by SNPedia community\"><b>Repute</b></span>: " + \
                rs["Repute"] + \
-               "<br>" + \
-               "<b>SNPedia Variant</b>: " + get_snpedia_link(rs["rs"]) + "<br>" + \
-               "<b>SNPedia Base SNP</b>: " + get_snpedia_link(rs["rs"].split("(")[0]) + "<br>" + \
-               "<b>OpenSNP Link</b>: <a href=\"https://opensnp.org/snps/" + rs["rs"].split("(")[0] + "\">" + \
-               rs["rs"].split("(")[0] + "</a><br>"
+               "<br>"
+    if get_snpedia_link(rs["rs"]) != "None":
+        content += "<b>SNPedia Variant</b>: " + get_snpedia_link(rs["rs"]) + "<br>"
+    if "(" in rs["rs"] and get_snpedia_link(rs["rs"].split("(")[0]) != "None":
+        content += "<b>SNPedia Base SNP</b>: " + get_snpedia_link(rs["rs"].split("(")[0]) + "<br>"
+    if rs["rs"].startswith("R") or rs["rs"].startswith("r"):
+        content += "<b>OpenSNP Link</b>: <a href=\"https://opensnp.org/snps/" + rs["rs"].split("(")[0] + "\">" + \
+                   rs["rs"].split("(")[0] + "</a><br>"
     for var_link, clinvar_var_pathos in zip(var_links, clinvar_variant_pathologies):
         content += ("<span title=\"ClinVar page of your variant\"><b>ClinVar "
                     "Variant</b></span>: ") + \
@@ -181,9 +185,13 @@ def rs_to_html(rs):
                    ("<span title=\"Associated traits/pathologies with your variants on ClinVar\"><b>Variants "
                     "pathologies for " + var_link + " (ClinVar)</b></span>: ") + \
                    clinvar_var_pathos + "<br>"
-    content += ("<span title=\"Other pathologies associated with this SNP. "
-                "Interesting to know if you have a good variant\"><b>Pathologies/traits you avoided (ClinVar)"
-                "</b></span>: ") + clinvar_all_pathologies + "<br>" + get_gwas_html(rs) + "<br>" + """</p>
+    if clinvar_all_pathologies != "None":
+        content += (("<span title=\"Other pathologies associated with this SNP. "
+                     "Interesting to know if you have a good variant\"><b>Pathologies/traits you avoided (ClinVar)"
+                     "</b></span>: ") + clinvar_all_pathologies + "<br>")
+    if rs["GWAS"]:
+        content += get_gwas_html(rs) + "<br>"
+    content += """</p>
       </div>
     </div>
     """
@@ -256,13 +264,14 @@ def main(input_filename, output_filename, force_reload=False, data_dir="data/", 
     dna = auto_load_dna(input_filename)
     genotypes = load_genotypes(data_dir)
     snps = load_snps(data_dir)
+    genosets = load_genosets(data_dir)
     gwas_traits = get_gwas_traits(data_dir)
     pathology_mapping = get_clinvar_variant_pathologies(data_dir)
     rs_pathologies = get_clinvar_rs_pathologies(pathology_mapping, data_dir)
     variants_mapping = get_clinvar_variants(pathology_mapping, data_dir)
     haplotypes = get_haplotypes(data_dir)
     all_rss = get_summaries_dict(dna, genotypes, snps, rs_pathologies, variants_mapping, gwas_traits, haplotypes,
-                                 pathology_mapping)
+                                 pathology_mapping, genosets)
     html = get_html_page(all_rss)
     with open(output_filename, "w") as f:
         f.write(html)
