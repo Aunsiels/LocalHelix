@@ -4,7 +4,8 @@ import json
 from flask import Flask, flash, request, redirect, url_for, send_from_directory, abort
 from werkzeug.utils import secure_filename
 
-from localhelix.analyzer import analyze_dna_to_json, initialize_all, create_page_from_body, get_html_page, _clean_for_json
+from localhelix.analyzer import analyze_dna_to_json, initialize_all, create_page_from_body, get_html_page, \
+    _clean_for_json, generate_llm_prompt
 
 UPLOAD_FOLDER = '/path/to/the/uploads'
 ALLOWED_EXTENSIONS = {'txt', 'csv', 'tsv'}
@@ -38,7 +39,8 @@ def show_report(json_filename):
         all_rss = json.load(f)
 
     json_data_url = url_for('serve_data', filename=json_filename)
-    return get_html_page(all_rss=all_rss, json_data_url=json_data_url)
+    llm_prompt = generate_llm_prompt(all_rss, n=20)
+    return get_html_page(all_rss=all_rss, json_data_url=json_data_url, llm_prompt=llm_prompt)
 
 @app.route('/', methods=['GET', 'POST'])
 def upload_file():

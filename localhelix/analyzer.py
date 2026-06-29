@@ -125,6 +125,44 @@ def summaries_results_in_html(all_rs):
     return "".join(res)
 
 
+def generate_text_summary(all_rs):
+    """Generates a text summary of the analysis results."""
+    snpedia_counter = 0
+    pathologies_variants = []
+    pathologies_variants_pathogenic = []
+    gwas_traits = []
+
+    for rs in all_rs:
+        if rs.get("was_on_snpedia"):
+            snpedia_counter += 1
+        for pathology_list in rs.get("ClinVarVariantPathologies", []):
+            for pathology in pathology_list:
+                _add_pathology_to_counters_from_json(pathologies_variants, pathologies_variants_pathogenic, pathology)
+        gwas = rs.get("GWAS", {})
+        for al, value in gwas.items():
+            for gwas_item in value:
+                mapped_trait, _, text = gwas_item["trait"]
+                or_betas = gwas_item["or_betas"]
+                if not text:
+                    for or_beta in or_betas:
+                        if or_beta:
+                            text = "Odd ratio >1" if float(or_beta) > 1.0 else "Odd ratio <1"
+                            break
+                gwas_traits.append(f"{mapped_trait} ({text})")
+
+    pathologies_variants_pathogenic_counts = Counter(pathologies_variants_pathogenic)
+    gwas_traits_counts = Counter(gwas_traits)
+
+    summary = f"Overall Summary:\n- Found matches for {len(all_rs)} variants.\n"
+    summary += f"- {snpedia_counter} variants were on SNPedia.\n"
+    summary += f"- On ClinVar, found {len(set(pathologies_variants))} different pathologies/traits associated with your variants. "
+    summary += f"{len(set(pathologies_variants_pathogenic))} were classified as pathogenic or likely pathogenic.\n"
+    summary += f"  - Most frequent pathogenic traits: {', '.join([f'{k} ({v})' for k, v in pathologies_variants_pathogenic_counts.most_common(5)])}\n"
+    summary += f"- On GWAS, found {len(gwas_traits_counts)} different traits associated with your variants.\n"
+    summary += f"  - Most frequent traits: {', '.join([f'{k} ({v})' for k, v in gwas_traits_counts.most_common(5)])}\n\n"
+    return summary
+
+
 def _add_pathology_to_counters_from_json(pathologies_variants, pathologies_variants_pathogenic, pathology_json):
     name = pathology_json[1]
     is_pathogenic = pathology_json[2]
@@ -177,11 +215,32 @@ def _clean_for_json(obj):
     return obj
 
 
-def get_html_page(all_rss=None, json_data_url=None):
+def get_html_page(all_rss=None, json_data_url=None, llm_prompt=None):
     summary_html = ""
     if all_rss:
         summary_html = summaries_results_in_html(all_rss)
-    content = summary_html + r"""
+
+    llm_html = ""
+    if llm_prompt:
+        llm_html = f"""
+        <div class="card mt-4 mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <button class="btn btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#llm-prompt-collapse" aria-expanded="false" aria-controls="llm-prompt-collapse">
+                        Click to Show/Hide LLM Interpretation Prompt
+                    </button>
+                </h5>
+            </div>
+            <div id="llm-prompt-collapse" class="collapse">
+                <div class="card-body">
+                    <p>You can copy the text below and paste it into a Large Language Model (like ChatGPT, Gemini, Claude, etc.) to get an interpretation of your top results.</p>
+                    <pre><code>{llm_prompt}</code></pre>
+                </div>
+            </div>
+        </div>
+        """
+
+    content = summary_html + llm_html + r"""
         <h2>All variants</h2>
         <div class="row mb-3">
             <div class="col-md-8">
@@ -195,6 +254,12 @@ def get_html_page(all_rss=None, json_data_url=None):
                 </select>
             </div>
         </div>
+        <div id="loading-indicator" class="d-flex justify-content-center align-items-center" style="height: 150px;">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <strong class="ms-3">Loading variants data, this may take a moment...</strong>
+        </div>
         <div id="variants-container"></div>
         <nav aria-label="Page navigation">
           <ul class="pagination" id="pagination">
@@ -207,6 +272,7 @@ def get_html_page(all_rss=None, json_data_url=None):
             const paginationContainer = document.getElementById('pagination');
             const searchBar = document.getElementById('search-bar');
             const sortOptions = document.getElementById('sort-options');
+            const loadingIndicator = document.getElementById('loading-indicator');
             const itemsPerPage = 50;
             let currentPage = 1;
             let all_variants_data = [];
@@ -223,6 +289,9 @@ def get_html_page(all_rss=None, json_data_url=None):
                 filtered_variants_data = all_variants_data;
                 // Initial render
                 renderItems(1);
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '';
+                }
                 setupPagination();
                 searchBar.addEventListener('keyup', search);
                 sortOptions.addEventListener('change', sortData);
@@ -354,15 +423,7 @@ def get_html_page(all_rss=None, json_data_url=None):
             function sortData() {
                 const sortBy = sortOptions.value;
                 if (sortBy === 'default') {
-                    // The default sort is the original order from the server (by relevance score)
-                    // We just need to re-filter based on the current search term.
-                    const searchTerm = searchBar.value.toLowerCase();
-                    if (!searchTerm) {
-                        filtered_variants_data = [...all_variants_data];
-                    } else {
-                        // Re-run search to get correctly ordered filtered data
-                        search({target: {value: searchTerm}});
-                    }
+                    filtered_variants_data = [...all_variants_data].filter(rs => filterFunction(rs, searchBar.value.toLowerCase()));
                 } else if (sortBy === 'magnitude') {
                     filtered_variants_data.sort((a, b) => {
                         const magA = parseFloat(a.Magnitude) || 0;
@@ -381,34 +442,42 @@ def get_html_page(all_rss=None, json_data_url=None):
                 setupPagination();
             }
 
+            function filterFunction(rs, searchTerm) {
+                if (!searchTerm) return true;
+                // Search in variant name (rs), summary, and text
+                if (rs.rs && rs.rs.toLowerCase().includes(searchTerm)) return true;
+                if (rs.summary && rs.summary.toLowerCase().includes(searchTerm)) return true;
+                if (rs.text && rs.text.toLowerCase().includes(searchTerm)) return true;
+
+                // Search in ClinVar pathologies
+                if (rs.ClinVarAllPathologies) {
+                    for (const p of rs.ClinVarAllPathologies) {
+                        if (p[1] && p[1].toLowerCase().includes(searchTerm)) return true;
+                    }
+                }
+                if (rs.ClinVarVariantPathologies) {
+                    for (const p_list of rs.ClinVarVariantPathologies) {
+                        for (const p of p_list) {
+                            if (p[1] && p[1].toLowerCase().includes(searchTerm)) return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
             function search(event) {
                 const searchTerm = event.target.value.toLowerCase();
-                if (!searchTerm) {
-                    filtered_variants_data = all_variants_data;
-                } else {
-                    filtered_variants_data = all_variants_data.filter(rs => {
-                        // Search in variant name (rs), summary, and text
-                        if (rs.rs && rs.rs.toLowerCase().includes(searchTerm)) return true;
-                        if (rs.summary && rs.summary.toLowerCase().includes(searchTerm)) return true;
-                        if (rs.text && rs.text.toLowerCase().includes(searchTerm)) return true;
-
-                        // Search in ClinVar pathologies
-                        if (rs.ClinVarAllPathologies) {
-                            for (const p of rs.ClinVarAllPathologies) {
-                                if (p[1] && p[1].toLowerCase().includes(searchTerm)) return true;
-                            }
-                        }
-                        if (rs.ClinVarVariantPathologies) {
-                            for (const p_list of rs.ClinVarVariantPathologies) {
-                                for (const p of p_list) {
-                                    if (p[1] && p[1].toLowerCase().includes(searchTerm)) return true;
-                                }
-                            }
-                        }
-                        return false;
-                    });
+                filtered_variants_data = all_variants_data.filter(rs => filterFunction(rs, searchTerm));
+                // Re-apply current sort to new search results
+                const sortBy = sortOptions.value;
+                if (sortBy !== 'default') {
+                    sortData();
                 }
-                sortData(); // Apply current sort to new search results
+                renderItems(1);
+                if (loadingIndicator) {
+                    loadingIndicator.innerHTML = '';
+                }
+                setupPagination();
             }
 
             function renderItems(page) {
@@ -482,6 +551,42 @@ def create_page_from_body(body):
     return html
 
 
+def generate_llm_prompt(top_results, n=20):
+    """Generates a prompt for an LLM based on the top genetic analysis results."""
+    summary_text = generate_text_summary(top_results)
+
+    prompt = "I am not a doctor and this is not medical advice. This is for informational purposes only.\n\n"
+    prompt += "I have analyzed my DNA. Here is a high-level summary of the findings:\n"
+    prompt += summary_text
+    prompt += f"Below are the details for the top {min(n, len(top_results))} most relevant genetic variants found. "
+    prompt += "For each variant, I'm providing information from SNPedia (Magnitude, Repute, summary), ClinVar (associated pathologies), and GWAS catalog (associated traits).\n\n"
+    prompt += "Please provide a comprehensive interpretation of these results, starting with the overall summary and then detailing the implications of the individual variants. Reiterate that this is not medical advice and a doctor should be consulted for any health concerns.\n\n"
+    prompt += "Here are the results:\n\n"
+
+    for i, rs in enumerate(top_results[:n]):
+        prompt += f"--- Result {i + 1} ---\n"
+        prompt += f"Variant: {rs.get('rs', 'N/A')}\n"
+        prompt += f"SNPedia Magnitude: {rs.get('Magnitude', 'Unknown')}\n"
+        prompt += f"SNPedia Repute: {rs.get('Repute', 'Unknown')}\n"
+        prompt += f"SNPedia Summary: {rs.get('summary', 'N/A')}\n"
+
+        if rs.get("ClinVarVariantPathologies"):
+            prompt += "ClinVar Variant Pathologies:\n"
+            for patho_list in rs.get("ClinVarVariantPathologies", []):
+                for patho in patho_list:
+                    # patho is a tuple: (condition_id, name, is_pathogenic, n_submissions, status)
+                    prompt += f"- {patho[1]} (Significance: {patho[2]})\n"
+
+        if rs.get("GWAS"):
+            prompt += "GWAS Traits:\n"
+            for allele, traits in rs.get("GWAS").items():
+                for trait_info in traits:
+                    # trait_info is a dict: {"trait": [mapped_trait, trait_uri, text], "count": count, "or_betas": or_betas}
+                    prompt += f"- Allele {allele}: {trait_info['trait'][0]}\n"
+        prompt += "\n"
+
+    return prompt
+
 def score_summary_entry(entry):
     magnitude = 0
     if entry["Magnitude"] != "Unknown" and entry["Magnitude"] != "":
@@ -521,7 +626,7 @@ def analyze_dna_to_json(input_filename, output_json_filename, force_reload=False
         json.dump(_clean_for_json(all_rss), f)
     print("Report data written to " + output_json_filename)
 
-def main(input_filename, output_filename, force_reload=False, data_dir="data/", initialize=True):
+def main(input_filename, output_filename, force_reload=False, data_dir="data/", initialize=True, llm_prompt_output=None):
     if initialize:
         initialize_all(force=force_reload, data_dir=data_dir)
     dna = auto_load_dna(input_filename)
@@ -534,10 +639,17 @@ def main(input_filename, output_filename, force_reload=False, data_dir="data/", 
     variants_mapping = get_clinvar_variants(pathology_mapping, data_dir)
     haplotypes = get_haplotypes(data_dir)
     all_rss = get_summaries_dict(dna, genotypes, snps, rs_pathologies, variants_mapping, gwas_traits, haplotypes,
-                                 pathology_mapping, genosets) # This returns a list of dicts
-    html = get_html_page(all_rss)
-    with open(output_filename, "w") as f:
+                                 pathology_mapping, genosets)
+
+    llm_prompt = generate_llm_prompt(all_rss, n=20)
+
+    html = get_html_page(all_rss, llm_prompt=llm_prompt)
+    with open(output_filename, "w", encoding="utf-8") as f:
         f.write(html)
+    if llm_prompt_output:
+        with open(llm_prompt_output, "w", encoding="utf-8") as f:
+            f.write(llm_prompt)
+        print(f"LLM prompt written to {llm_prompt_output}")
     print("Report written to " + output_filename)
 
 
@@ -555,9 +667,11 @@ def get_arguments():
                         help="Force reload all data sources (time consuming)")
     parser.add_argument("-d", "--data_dir", default="data/",
                         help="Directory where data files are located.")
+    parser.add_argument("--llm-prompt-output",
+                        help="Output file for an LLM prompt based on top results.")
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = get_arguments()
-    main(args.input, args.output, args.force_reload, args.data_dir)
+    main(args.input, args.output, args.force_reload, args.data_dir, llm_prompt_output=args.llm_prompt_output)
