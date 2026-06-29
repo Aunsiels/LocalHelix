@@ -55,16 +55,21 @@ def get_gwas_traits(data_dir):
         text = getattr(row, "p_CI_TEXT")
         mapped_trait = disease + "(" + getattr(row, "MAPPED_TRAIT") + ")"
         trait_uri = getattr(row, "MAPPED_TRAIT_URI")
-        or_or_beta = getattr(row, "OR_or_BETA")
+        or_or_beta = getattr(row, "OR_or_BETA", None)
         key = (snp, abnormal)
         text = re.sub(r"\[.*]", "", text).strip()
         if key not in res:
-            res[key] = dict()
-        value = (mapped_trait, trait_uri, text)
-        if value not in res[key]:
-            res[key][value] = [0, []]
-        res[key][value][0] += 1
-        res[key][value][1].append(or_or_beta)
+            res[key] = []
+        
+        found = False
+        for item in res[key]:
+            if item[0] == mapped_trait and item[1] == trait_uri and item[2] == text:
+                item[3] += 1
+                item[4].append(or_or_beta)  # or_beta list
+                found = True
+                break
+        if not found:
+            res[key].append([mapped_trait, trait_uri, text, 1, [or_or_beta]])
     return res
 
 

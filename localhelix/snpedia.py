@@ -21,6 +21,9 @@ DATA_GENOTYPES = None
 USE_WIKITEXT = True
 
 URL_ENDPOINT = "https://bots.snpedia.com/api.php"
+HEADERS = {
+    'User-Agent': 'MySNPediaBot/1.0 (contact@example.com) BasedOnRequests'
+}
 REGEX_PMID = re.compile(r"\[PMID (?P<id>\d*)\]")
 
 
@@ -136,8 +139,13 @@ def get_wikitexts(pages):
         "rvprop": "content",
         "rvslots": "main"
     }
-    response = requests.get(URL_ENDPOINT, params=params)
-    response_json = response.json()
+    response = requests.post(URL_ENDPOINT, data=params, headers=HEADERS)
+    try:
+        response_json = response.json()
+    except requests.exceptions.JSONDecodeError:
+        print("Strange", pages)
+        print(response.content.decode("utf-8"))
+        response_json = json.loads(response.content.decode("utf-8"))
     res = dict()
     for page in response_json["query"]["pages"].values():
         title = page["title"]
@@ -259,7 +267,7 @@ def separate_snpedia_variants(dna, genotypes, snps):
         elif orientation == "minus":
             genotype = backward_genotype
         else:
-            DATA_GENOTYPES_HTML.dump()
+            DATA_GENOTYPES_HTML.save()
             ValueError("Unknown orientation " + str(orientation))
         if genotype in genotypes:
             found.add((genotype, forward_genotype))
@@ -268,15 +276,15 @@ def separate_snpedia_variants(dna, genotypes, snps):
         if not exists:
             counter += 1
             if counter % 100 == 0:
-                DATA_GENOTYPES_HTML.dump()
+                DATA_GENOTYPES_HTML.save()
     if counter > 0:
-        DATA_GENOTYPES_HTML.dump()
+        DATA_GENOTYPES_HTML.save()
     return found, remaining
 
 
 def get_info_genotype(genotype, autodump=True):
     genotype = genotype.replace("rs", "Rs")
-    if DATA_GENOTYPES.exists(genotype):
+    if DATA_GENOTYPES.get(genotype) is not None:
         return DATA_GENOTYPES.get(genotype), True
     if USE_WIKITEXT:
         info = get_wikitexts(genotype)[genotype]
@@ -284,7 +292,7 @@ def get_info_genotype(genotype, autodump=True):
         info = parse_genotype_from_html(genotype)
     DATA_GENOTYPES.set(genotype, info)
     if autodump:
-        DATA_GENOTYPES.dump()
+        DATA_GENOTYPES.save()
     return info, False
 
 
@@ -348,8 +356,8 @@ def download_all(data_dir, only_genosets=False):
     if USE_WIKITEXT:
         try:
             download_genotypes_wikitext(genotypes)
-        except:
-            DATA_GENOTYPES_WIKITEXT.dump()
+        except Exception:
+            DATA_GENOTYPES_WIKITEXT.save()
             raise
     else:
         download_genotypes_html(genotypes)
@@ -358,41 +366,47 @@ def download_all(data_dir, only_genosets=False):
 def download_genotypes_html(genotypes):
     counter = 0
     for genotype in tqdm(genotypes):
-        if genotype.startswith("Rs") and not DATA_GENOTYPES_HTML.exists(genotype):
+        if genotype.startswith("Rs") and DATA_GENOTYPES_HTML.get(genotype) is None:
             counter += 1
             info = parse_genotype_from_html(genotype)
             DATA_GENOTYPES_HTML.set(genotype, info)
             if counter % 100 == 0:
                 print("Saving...")
-                DATA_GENOTYPES_HTML.dump()
+                DATA_GENOTYPES_HTML.save()
                 print("Saved")
     if counter > 0:
         print("Saving...")
-        DATA_GENOTYPES_HTML.dump()
+        DATA_GENOTYPES_HTML.save()
         print("Saved")
 
 
 def download_genotypes_wikitext(genotypes):
     counter = 0
-    genotypes = [genotype for genotype in genotypes if not DATA_GENOTYPES_WIKITEXT.exists(genotype)]
+    DATA_GENOTYPES_WIKITEXT.load()
+    genotypes = [genotype for genotype in genotypes if DATA_GENOTYPES_WIKITEXT.get(genotype) is None]
     if not genotypes:
         return
     for counter in tqdm(range(len(genotypes) // 100), total=len(genotypes) // 100,
                         desc="Predownloading relevant pages"):
-        for key, value in get_wikitexts(genotypes[counter * 100:(counter + 1) * 100]).items():
-            DATA_GENOTYPES_WIKITEXT.set(key, value)
+        try:
+            for key, value in get_wikitexts(genotypes[counter * 100:(counter + 1) * 100]).items():
+                DATA_GENOTYPES_WIKITEXT.set(key, value)
+        except Exception:
+            DATA_GENOTYPES_WIKITEXT.save()
+            raise
         if counter % 50 == 49:
             try:
-                DATA_GENOTYPES_WIKITEXT.dump()
+                DATA_GENOTYPES_WIKITEXT.save()
             except KeyboardInterrupt:
-                DATA_GENOTYPES_WIKITEXT.dump()
+                DATA_GENOTYPES_WIKITEXT.save()
                 raise
-    for key, value in get_wikitexts(genotypes[(counter + 1) * 100:]).items():
+    processed_count = (len(genotypes) // 100) * 100
+    for key, value in get_wikitexts(genotypes[processed_count:]).items():
         DATA_GENOTYPES_WIKITEXT.set(key, value)
     try:
-        DATA_GENOTYPES_WIKITEXT.dump()
+        DATA_GENOTYPES_WIKITEXT.save()
     except KeyboardInterrupt:
-        DATA_GENOTYPES_WIKITEXT.dump()
+        DATA_GENOTYPES_WIKITEXT.save()
         raise
 
 
@@ -426,9 +440,9 @@ def get_all_snpedia_match_genotypes(dna, genotypes, snps, genosets):
         if not exists:
             counter += 1
             if counter % 100 == 0:
-                DATA_GENOTYPES.dump()
+                DATA_GENOTYPES.save()
     if counter > 0:
-        DATA_GENOTYPES.dump()
+        DATA_GENOTYPES.save()
     for r in remaining:
         res[r] = dict()
     return res
@@ -447,8 +461,8 @@ def initialize_snpedia(force=False, data_dir="data/"):
     save_snps(force, data_dir)
     save_medical_conditions(force, data_dir)
     save_genosets(force, data_dir)
-    DATA_GENOTYPES_HTML = pickledb.load(os.path.join(data_dir, 'data_genotypes.db'), False)
-    DATA_GENOTYPES_WIKITEXT = pickledb.load(os.path.join(data_dir, 'data_wikitext_genotypes.db'), False)
+    DATA_GENOTYPES_HTML = pickledb.PickleDB(os.path.join(data_dir, 'data_genotypes.db')).load()
+    DATA_GENOTYPES_WIKITEXT = pickledb.PickleDB(os.path.join(data_dir, 'data_wikitext_genotypes.db')).load()
     USE_WIKITEXT = True
     if USE_WIKITEXT:
         DATA_GENOTYPES = DATA_GENOTYPES_WIKITEXT

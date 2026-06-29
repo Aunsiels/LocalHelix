@@ -56,7 +56,7 @@ def get_variants_mapping():
     for row in tqdm(df.itertuples(), total=len(df), desc="Loading ClinVar variant data"):
         id = row.id
         name = row.Name
-        if ">" not in name:
+        if ">" not in name or name == "not provided" or name == "not specified":
             continue
         idx = name.find(">")
         abnormal = name[idx + 1]
@@ -75,8 +75,12 @@ def get_clinvar_variant_pathologies(data_dir):
         id = row.variation_id
         if id not in res:
             res[id] = set()
-        if not pd.isna(row.name):
-            res[id].add(Pathology(row.condition_id, row.name, row.is_pathogenic, row.n_submissions, row.status))
+        if pd.notna(row.name) and row.name.strip() not in ["not provided", "not specified"]:
+            condition_id = row.condition_id if pd.notna(row.condition_id) else ""
+            is_pathogenic = row.is_pathogenic if pd.notna(row.is_pathogenic) else ""
+            n_submissions = row.n_submissions if pd.notna(row.n_submissions) else 0
+            status = row.status if pd.notna(row.status) else ""
+            res[id].add(Pathology(condition_id, row.name, is_pathogenic, n_submissions, status))
     return res
 
 
@@ -104,7 +108,10 @@ def get_clinvar_variants(pathology_mapping, data_dir):
 
 
 def get_phenotype_medgen_ids(row):
-    ids = row.PhenotypeIDS.split("|")
+    phenotype_list = row.PhenotypeList if pd.notna(row.PhenotypeList) else ""
+    phenotype_ids = row.PhenotypeIDS if pd.notna(row.PhenotypeIDS) else ""
+
+    ids = phenotype_ids.split("|")
     ids_filtered = []
     for i in ids:
         final_id = ""
@@ -113,8 +120,8 @@ def get_phenotype_medgen_ids(row):
                 final_id = pid
                 break
         ids_filtered.append(final_id)
-    values = set(Pathology(str(x), y, "", 0, "")
-                 for x, y in zip(ids_filtered, row.PhenotypeList.split("|")))
+    values = {Pathology(str(x), y, "", 0, "")
+              for x, y in zip(ids_filtered, phenotype_list.split("|")) if y}
     return values
 
 
@@ -316,6 +323,8 @@ def process_variation(var_dict, variant_file, pathology_file, haplotype_file):
         conditions = rcv["ClassifiedConditionList"][0]["ClassifiedCondition"]
         for condition in conditions:
             name = condition["text"]
+            if not name or name.strip() in ["not provided", "not specified"]:
+                continue
             if condition["attrs"]:
                 condition_id = condition["attrs"]["DB"] + ":" + condition["attrs"]["ID"]
             else:

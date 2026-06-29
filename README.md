@@ -46,7 +46,7 @@ this page, you have to upload your DNA results (this website is on your machine,
 so your data is not sent to anybody). After clicking on the upload button, wait a
 few minutes and your results will appear!
 
-### With Python
+### With Python and Command Line
 
 To run the program, you need to have Python installed and a package installer like pip.
 
@@ -74,6 +74,23 @@ existing data directory. We provide such a directory on our GitHub. You can
 download it, unzip it, and link to it when you start your program.
 
 The output file is a html file that you can open with your favorite web browser.
+
+### With Python and Flask
+
+Install the dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
+Then, run the commands
+
+```bash
+export FLASK_APP=localhelix/web_server.py
+flask run
+```
+
+You can now open your browser, go to http://127.0.0.1:5000 and upload your DNA.
 
 ## Data Sources
 
