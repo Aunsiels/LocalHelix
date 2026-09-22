@@ -21,8 +21,8 @@ directly using the download button on the GitHub page.
 
 You can run the project with Docker. First, install Docker following
 the instructions on the [official website](https://docs.docker.com/engine/install/).
-Then, you can optionally download the data folder provided on the release page of
-our GitHub project. You must place this folder in the localhelix folder
+Then, you can optionally download the data folder provided on [Google Drive](https://drive.google.com/file/d/1NEWaTY9zp3Fuvnf3zQc0QtymBebPeimK/view?usp=sharing) of.
+You must place this folder in the localhelix folder
 (localhelix/data). Then run at the root of the project:
 
 ```bash

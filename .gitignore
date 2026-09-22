@@ -7,3 +7,7 @@
 *.pptx
 *.html
 __pycache__/
+*.venv
+data/
+*.swp
+*.zip
